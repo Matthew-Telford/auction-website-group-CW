@@ -134,3 +134,8 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 INTERNAL_IPS = ["127.0.0.1"]
+
+# Media files (User uploaded content like images)
+# https://docs.djangoproject.com/en/stable/topics/files/
+MEDIA_URL = "media/"
+MEDIA_ROOT = os.path.join(BASE_DIR, "media")
