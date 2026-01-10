@@ -138,3 +138,60 @@ def delete_profile_picture(request):
         "success": True,
         "message": "Profile picture deleted successfully"
     })
+
+
+def user_signup(request):
+    """Create a new user account"""
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    # Handle JSON body from fetch
+    try:
+        data = json.loads(request.body)
+        first_name = data.get("first_name")
+        last_name = data.get("last_name")
+        email = data.get("email")
+        password = data.get("password")
+        date_of_birth = data.get("date_of_birth")
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"error": "Invalid JSON data"}, status=400)
+    
+    # Validate required fields
+    if not all([first_name, last_name, email, password, date_of_birth]):
+        return JsonResponse({
+            "error": "All fields are required (first_name, last_name, email, password, date_of_birth)"
+        }, status=400)
+    
+    # Check if user already exists
+    if User.objects.filter(email=email).exists():
+        return JsonResponse({"error": "User with this email already exists"}, status=400)
+    
+    try:
+        # Create the user
+        user = User.objects.create_user(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            password=password,
+            date_of_birth=date_of_birth
+        )
+        
+        # Log the user in automatically after signup
+        login(request, user)
+        
+        # Return user data
+        user_data = {
+            "id": user.id,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "profile_picture": None
+        }
+        
+        return JsonResponse({
+            "success": True,
+            "message": "Account created successfully",
+            "user": user_data
+        })
+    except Exception as e:
+        return JsonResponse({"error": f"Failed to create account: {str(e)}"}, status=500)
