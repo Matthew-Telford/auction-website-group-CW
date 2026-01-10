@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/card";
 import {
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -42,8 +41,10 @@ const loginForm = useForm({
   validationSchema: loginValidationSchema,
 });
 
-const onSubmit = loginForm.handleSubmit((email, password) => {
-  emit("loginPressed", email, password);
+const onSubmit = loginForm.handleSubmit((values) => {
+  console.log("email:", values.email);
+  console.log("password:", values.password);
+  emit("loginPressed", values.email, values.password);
 });
 
 const handleSignup = () => {
@@ -66,7 +67,6 @@ const handleSignup = () => {
             <FormLabel>Email</FormLabel>
             <FormControl>
               <Input
-                class="mb-2"
                 type="text"
                 placeholder="Enter your email"
                 v-bind="componentField"
@@ -76,11 +76,10 @@ const handleSignup = () => {
           </FormItem>
         </FormField>
         <FormField v-slot="{ componentField }" name="password">
-          <FormItem>
+          <FormItem class="mt-2">
             <FormLabel>Password</FormLabel>
             <FormControl>
               <Input
-                class="mb-2"
                 type="text"
                 placeholder="Enter your password"
                 v-bind="componentField"
@@ -89,11 +88,13 @@ const handleSignup = () => {
             <FormMessage />
           </FormItem>
         </FormField>
-        <Button class="mt-1" type="submit">Login</Button>
+        <div class="flex flex-col justify-center items-center w-full">
+          <Button class="mt-2" type="submit">Login</Button>
+        </div>
       </form>
     </CardContent>
     <CardFooter class="flex flex-col">
-      <span class="text-sm text-gray-400">Don't have an account?</span>
+      <span class="text-sm text-gray-400 mb-1">Don't have an account?</span>
       <Button variant="outline" class="w-full" @click="handleSignup"
         >Signup</Button
       >

@@ -1,12 +1,13 @@
 from django.contrib.auth import authenticate, login
 from django.http import HttpResponse, HttpRequest, JsonResponse
 from django.shortcuts import render
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.contrib.auth.decorators import login_required
 from .models import User
 import json
 
 
+@ensure_csrf_cookie
 def main_spa(request: HttpRequest) -> HttpResponse:
     return render(request, "api/spa/index.html", {})
 
