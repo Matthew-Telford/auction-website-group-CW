@@ -1,20 +1,16 @@
-<template>
-  <div class="h1">
-    {{ title }}
-  </div>
-</template>
+<script setup lang="ts">
+import { useRouter } from "vue-router";
+import Button from "@/components/ui/button/Button.vue";
 
-<script lang="ts">
-    import { defineComponent } from "vue";
+const router = useRouter();
 
-    export default defineComponent({
-        data() {
-            return {
-                title: "Main Page",
-            }
-        }
-    })
+const goLogin = () => {
+  router.push("/login");
+};
 </script>
 
-<style scoped>
-</style>
+<template>
+  <div class="flex justify-center items-center w-full h-full bg-slate-500">
+    <Button @click="goLogin">Login</Button>
+  </div>
+</template>
