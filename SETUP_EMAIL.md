@@ -119,5 +119,3 @@ python manage.py crontab show  # Verify it was added
 ```
 
 ---
-
-Need help? Check `api/TEST_CRON_README.md` for more detailed testing instructions.
