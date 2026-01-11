@@ -4,7 +4,7 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q, Case, When, IntegerField, Value, F, Max
-from .models import User, Item, Bid
+from .models import User, Item, Bid, Message
 import json
 import re
 from datetime import date
@@ -957,3 +957,221 @@ def get_user_bidded_items(request, user_id=None):
         'items': items_data,
         'count': len(items_data)
     })
+
+
+@login_required
+def create_message(request):
+    """Create a new message on an item (can be a reply or top-level message)"""
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        item_id = data.get("item_id")
+        message_title = data.get("message_title")
+        message_body = data.get("message_body")
+        replying_to_id = data.get("replying_to_id")
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"error": "Invalid JSON data"}, status=400)
+    
+    if not all([item_id, message_title, message_body]):
+        return JsonResponse(
+            {"error": "item_id, message_title, and message_body are required"},
+            status=400
+        )
+    
+    try:
+        item = Item.objects.get(id=item_id)
+    except Item.DoesNotExist:
+        return JsonResponse({"error": "Item not found"}, status=404)
+    
+    replying_to = None
+    if replying_to_id:
+        try:
+            replying_to = Message.objects.get(id=replying_to_id)
+            if replying_to.item != item:
+                return JsonResponse(
+                    {"error": "Reply must be connected to the same item as the parent message"},
+                    status=400
+                )
+        except Message.DoesNotExist:
+            return JsonResponse({"error": "Parent message not found"}, status=404)
+    
+    try:
+        message = Message.objects.create(
+            poster=request.user,
+            item=item,
+            message_title=message_title,
+            message_body=message_body,
+            replying_to=replying_to
+        )
+        
+        message_data = {
+            'id': message.id,
+            'message_title': message.message_title,
+            'message_body': message.message_body,
+            'created_at': message.created_at.isoformat(),
+            'poster': {
+                'id': request.user.id,
+                'name': f"{request.user.first_name} {request.user.last_name}",
+                'email': request.user.email
+            } if message.poster else None,
+            'item_id': item.id,
+            'replying_to_id': replying_to.id if replying_to else None,
+            'is_owner': message.poster == item.owner if message.poster and item.owner else False
+        }
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Message created successfully',
+            'data': message_data
+        })
+    except Exception as e:
+        return JsonResponse(
+            {"error": f"Failed to create message: {str(e)}"}, status=500
+        )
+
+
+@login_required
+def get_item_messages(request, item_id):
+    """Get all messages for a specific item in nested format"""
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    try:
+        item = Item.objects.get(id=item_id)
+    except Item.DoesNotExist:
+        return JsonResponse({"error": "Item not found"}, status=404)
+    
+    all_messages = Message.objects.filter(item=item).select_related('poster', 'replying_to').order_by('created_at')
+    
+    messages_dict = {}
+    top_level_messages = []
+    
+    for message in all_messages:
+        message_data = {
+            'id': message.id,
+            'message_title': message.message_title,
+            'message_body': message.message_body,
+            'created_at': message.created_at.isoformat(),
+            'poster': {
+                'id': message.poster.id,
+                'name': f"{message.poster.first_name} {message.poster.last_name}",
+                'email': message.poster.email
+            } if message.poster else None,
+            'is_owner': message.poster == item.owner if message.poster and item.owner else False,
+            'replying_to_id': message.replying_to.id if message.replying_to else None,
+            'replies': []
+        }
+        
+        messages_dict[message.id] = message_data
+        
+        if message.replying_to is None:
+            top_level_messages.append(message_data)
+    
+    for message in all_messages:
+        if message.replying_to and message.replying_to.id in messages_dict:
+            messages_dict[message.replying_to.id]['replies'].append(messages_dict[message.id])
+    
+    return JsonResponse({
+        'success': True,
+        'item': {
+            'id': item.id,
+            'title': item.title
+        },
+        'messages': top_level_messages,
+        'count': len(top_level_messages)
+    })
+
+
+@login_required
+@csrf_exempt
+def update_message(request, message_id):
+    """Update a message (poster or admin only, title and body only)"""
+    if request.method != "PUT":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    try:
+        message = Message.objects.get(id=message_id)
+    except Message.DoesNotExist:
+        return JsonResponse({"error": "Message not found"}, status=404)
+    
+    if message.poster != request.user and not request.user.is_admin:
+        return JsonResponse(
+            {"error": "You don't have permission to edit this message"},
+            status=403
+        )
+    
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"error": "Invalid JSON data"}, status=400)
+    
+    if 'message_title' in data:
+        if not data['message_title']:
+            return JsonResponse({"error": "Message title cannot be empty"}, status=400)
+        message.message_title = data['message_title']
+    
+    if 'message_body' in data:
+        if not data['message_body']:
+            return JsonResponse({"error": "Message body cannot be empty"}, status=400)
+        message.message_body = data['message_body']
+    
+    try:
+        message.save()
+        
+        message_data = {
+            'id': message.id,
+            'message_title': message.message_title,
+            'message_body': message.message_body,
+            'created_at': message.created_at.isoformat(),
+            'poster': {
+                'id': message.poster.id,
+                'name': f"{message.poster.first_name} {message.poster.last_name}",
+                'email': message.poster.email
+            } if message.poster else None,
+            'item_id': message.item.id,
+            'replying_to_id': message.replying_to.id if message.replying_to else None,
+            'is_owner': message.poster == message.item.owner if message.poster and message.item.owner else False
+        }
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Message updated successfully',
+            'data': message_data
+        })
+    except Exception as e:
+        return JsonResponse(
+            {"error": f"Failed to update message: {str(e)}"}, status=500
+        )
+
+
+@login_required
+@csrf_exempt
+def delete_message(request, message_id):
+    """Delete a message (poster or admin only)"""
+    if request.method != "DELETE":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    try:
+        message = Message.objects.get(id=message_id)
+    except Message.DoesNotExist:
+        return JsonResponse({"error": "Message not found"}, status=404)
+    
+    if message.poster != request.user and not request.user.is_admin:
+        return JsonResponse(
+            {"error": "You don't have permission to delete this message"},
+            status=403
+        )
+    
+    try:
+        message.delete()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Message deleted successfully'
+        })
+    except Exception as e:
+        return JsonResponse(
+            {"error": f"Failed to delete message: {str(e)}"}, status=500
+        )

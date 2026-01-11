@@ -128,6 +128,37 @@ class Bid(models.Model):
     ]
 
 
+class Message(models.Model):
+    poster = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="sent_messages"
+    )
+    replying_to = models.ForeignKey("Message", null=True, blank=True, on_delete=models.CASCADE)
+    item = models.ForeignKey(Item, on_delete=models.CASCADE)
+    message_title = models.CharField(max_length=80)
+    message_body = models.TextField(max_length=250)
+    created_at = models.DateTimeField(auto_now_add=True)
+    REQUIRED_FIELDS = [
+        "poster",
+        "item",
+        "message_title",
+        "message_body",
+    ]
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.replying_to and self.replying_to.item != self.item:
+            raise ValidationError(
+                "Reply must be connected to the same item as the parent message"
+            )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.message_title
+
+
 class PageView(models.Model):
     count = models.IntegerField(default=0)
 
