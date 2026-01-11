@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import User, Item, Bid
+from .models import User, Item, Bid, Message
 from django import forms
 from django.contrib.auth.models import Group
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
@@ -117,4 +117,13 @@ class BidAdmin(admin.ModelAdmin):
     list_display = ['item', 'bidder', 'bid_amount', 'created_at']
     list_filter = ['created_at']
     search_fields = ['item__title', 'bidder__email']
+    readonly_fields = ['created_at']
+
+
+# Register Message model
+@admin.register(Message)
+class MessageAdmin(admin.ModelAdmin):
+    list_display = ['message_title', 'poster', 'item', 'replying_to', 'created_at']
+    list_filter = ['created_at']
+    search_fields = ['message_title', 'message_body', 'poster__email', 'item__title']
     readonly_fields = ['created_at']

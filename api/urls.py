@@ -35,6 +35,10 @@ from .views import (
     get_user_bids,
     get_item_bids,
     get_user_bidded_items,
+    create_message,
+    get_item_messages,
+    update_message,
+    delete_message,
 )
 
 urlpatterns = [
@@ -57,4 +61,8 @@ urlpatterns = [
     path('items/<int:item_id>/bids/', get_item_bids, name='get_item_bids'),
     path('users/<int:user_id>/bidded-items/', get_user_bidded_items, name='get_user_bidded_items'),
     path('users/me/bidded-items/', get_user_bidded_items, name='get_my_bidded_items'),
+    path('messages/create/', create_message, name='create_message'),
+    path('items/<int:item_id>/messages/', get_item_messages, name='get_item_messages'),
+    path('messages/<int:message_id>/update/', update_message, name='update_message'),
+    path('messages/<int:message_id>/delete/', delete_message, name='delete_message'),
 ]
