@@ -11,9 +11,13 @@ https://docs.djangoproject.com/en/stable/ref/settings/
 """
 
 from . import database
+from dotenv import load_dotenv
 import os
 
 from pathlib import Path
+
+# Load the env file
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -45,6 +49,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django_crontab",
     "corsheaders",
     "api",
 ]
@@ -62,6 +67,25 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = "project.urls"
+
+# Create Application Cron Jobs
+CRONJOBS = [
+    ("0 0 * * *", "api.cron.process_auction_winners"),
+]
+
+# Configure Email Settings for send_mail
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "smtp.gmail.com"
+
+# Get the email host user from the env file
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER")
+
+# get the email host password from the env file
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD")
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_USE_SSL = False
+DEFAULT_FROM_EMAIL = os.environ.get("EMAIL_HOST_USER", "noreply@auction.com")
 
 TEMPLATES = [
     {
