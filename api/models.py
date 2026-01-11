@@ -1,5 +1,7 @@
 from django.db import models
+import datetime
 from django.contrib.auth.models import AbstractUser, BaseUserManager
+from django.db.models import F, Q
 
 # Create your models here.
 
@@ -18,7 +20,9 @@ class MyUserManager(BaseUserManager):
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, first_name, last_name, email, date_of_birth, password=None):
+    def create_superuser(
+        self, first_name, last_name, email, date_of_birth, password=None
+    ):
         user = self.create_user(
             first_name=first_name,
             last_name=last_name,
@@ -40,10 +44,10 @@ class User(AbstractUser):
     date_of_birth = models.DateField()
     email = models.EmailField(verbose_name="email address", max_length=254, unique=True)
     profile_picture = models.ImageField(
-        upload_to='profile_pictures/',
+        upload_to="profile_pictures/",
         null=True,
         blank=True,
-        help_text="User's profile picture"
+        help_text="User's profile picture",
     )
     is_active = models.BooleanField(default=True)
     is_admin = models.BooleanField(default=False)
@@ -70,6 +74,42 @@ class User(AbstractUser):
         return self.is_admin
 
     pass
+
+
+class Item(models.Model):
+    title = models.CharField(max_length=80)
+    description = models.TextField(max_length=1250)
+    # Allow the owner column to store a null value as if the owner deletes there account after an auction has ended we still want record of the auction
+    owner = models.ForeignKey(User, null=True, on_delete=models.SET_NULL, related_name='owned_items')
+    # Allow the auction_winner column to store a null value as if the auction_winner deletes there account after an auction has ended we still want
+    # record of the auction
+    auction_winner = models.ForeignKey(User, null=True, on_delete=models.SET_NULL, related_name='won_items')
+    minimum_bid = models.IntegerField()
+    auction_end_date = models.DateField()
+    item_image = models.ImageField(
+        upload_to="item_pictures/",
+        null=True,
+        blank=True,
+        help_text="Auction item photo",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    REQUIRED_FIELDS = [
+        "title",
+        "description",
+        "owner",
+        "minimum_bid",
+        "auction_end_date",
+    ]
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["title"], name="title_idx"),
+            models.Index(fields=["description"], name="description_idx"),
+            models.Index(fields=["-created_at"], name="created_at_idx"),
+        ]
+
+    def __str__(self):
+        return self.title
 
 
 class PageView(models.Model):

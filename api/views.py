@@ -3,8 +3,11 @@ from django.http import HttpResponse, HttpRequest, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.contrib.auth.decorators import login_required
-from .models import User
+from django.db.models import Q, Case, When, IntegerField, Value, F
+from .models import User, Item
 import json
+import re
+from datetime import date
 
 
 @ensure_csrf_cookie
@@ -15,7 +18,7 @@ def main_spa(request: HttpRequest) -> HttpResponse:
 def user_login(request):
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
-    
+
     # Handle JSON body from fetch
     try:
         data = json.loads(request.body)
@@ -25,14 +28,14 @@ def user_login(request):
         # Fallback to form data
         email = request.POST.get("email")
         password = request.POST.get("password")
-    
+
     if not email or not password:
         return JsonResponse({"error": "Email and password are required"}, status=400)
-    
+
     user = authenticate(request, username=email, password=password)
     if user is not None:
         login(request, user)
-        
+
         # Include user data with profile picture URL
         user_data = {
             "id": user.id,
@@ -40,18 +43,18 @@ def user_login(request):
             "first_name": user.first_name,
             "last_name": user.last_name,
         }
-        
+
         # Add profile picture URL if exists
         if user.profile_picture:
-            user_data["profile_picture"] = request.build_absolute_uri(user.profile_picture.url)
+            user_data["profile_picture"] = request.build_absolute_uri(
+                user.profile_picture.url
+            )
         else:
             user_data["profile_picture"] = None
-        
-        return JsonResponse({
-            "success": True,
-            "message": "Login successful",
-            "user": user_data
-        })
+
+        return JsonResponse(
+            {"success": True, "message": "Login successful", "user": user_data}
+        )
     else:
         return JsonResponse({"error": "Invalid email or password"}, status=401)
 
@@ -60,18 +63,20 @@ def user_login(request):
 def get_user_profile(request):
     """Get the current user's profile"""
     user = request.user
-    
+
     user_data = {
         "id": user.id,
         "email": user.email,
         "first_name": user.first_name,
         "last_name": user.last_name,
         "date_of_birth": str(user.date_of_birth),
-        "profile_picture": request.build_absolute_uri(user.profile_picture.url) if user.profile_picture else None,
+        "profile_picture": request.build_absolute_uri(user.profile_picture.url)
+        if user.profile_picture
+        else None,
         "created_at": user.created_at.isoformat(),
         "updated_at": user.updated_at.isoformat(),
     }
-    
+
     return JsonResponse(user_data)
 
 
@@ -81,40 +86,43 @@ def upload_profile_picture(request):
     """Upload or update user's profile picture"""
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
-    
-    if 'profile_picture' not in request.FILES:
+
+    if "profile_picture" not in request.FILES:
         return JsonResponse({"error": "No file uploaded"}, status=400)
-    
+
     user = request.user
-    profile_picture = request.FILES['profile_picture']
-    
+    profile_picture = request.FILES["profile_picture"]
+
     # Validate file type
-    allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']
+    allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"]
     if profile_picture.content_type not in allowed_types:
-        return JsonResponse({
-            "error": "Invalid file type. Allowed types: JPEG, PNG, GIF, WebP"
-        }, status=400)
-    
+        return JsonResponse(
+            {"error": "Invalid file type. Allowed types: JPEG, PNG, GIF, WebP"},
+            status=400,
+        )
+
     # Validate file size (e.g., max 5MB)
     max_size = 5 * 1024 * 1024  # 5MB in bytes
     if profile_picture.size > max_size:
-        return JsonResponse({
-            "error": "File too large. Maximum size is 5MB"
-        }, status=400)
-    
+        return JsonResponse(
+            {"error": "File too large. Maximum size is 5MB"}, status=400
+        )
+
     # Delete old profile picture if exists
     if user.profile_picture:
         user.profile_picture.delete(save=False)
-    
+
     # Save new profile picture
     user.profile_picture = profile_picture
     user.save()
-    
-    return JsonResponse({
-        "success": True,
-        "message": "Profile picture uploaded successfully",
-        "profile_picture": request.build_absolute_uri(user.profile_picture.url)
-    })
+
+    return JsonResponse(
+        {
+            "success": True,
+            "message": "Profile picture uploaded successfully",
+            "profile_picture": request.build_absolute_uri(user.profile_picture.url),
+        }
+    )
 
 
 @login_required
@@ -123,28 +131,27 @@ def delete_profile_picture(request):
     """Delete user's profile picture"""
     if request.method != "DELETE":
         return JsonResponse({"error": "Method not allowed"}, status=405)
-    
+
     user = request.user
-    
+
     if not user.profile_picture:
         return JsonResponse({"error": "No profile picture to delete"}, status=404)
-    
+
     # Delete the file
     user.profile_picture.delete(save=False)
     user.profile_picture = None
     user.save()
-    
-    return JsonResponse({
-        "success": True,
-        "message": "Profile picture deleted successfully"
-    })
+
+    return JsonResponse(
+        {"success": True, "message": "Profile picture deleted successfully"}
+    )
 
 
 def user_signup(request):
     """Create a new user account"""
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
-    
+
     # Handle JSON body from fetch
     try:
         data = json.loads(request.body)
@@ -155,17 +162,22 @@ def user_signup(request):
         date_of_birth = data.get("date_of_birth")
     except (json.JSONDecodeError, ValueError):
         return JsonResponse({"error": "Invalid JSON data"}, status=400)
-    
+
     # Validate required fields
     if not all([first_name, last_name, email, password, date_of_birth]):
-        return JsonResponse({
-            "error": "All fields are required (first_name, last_name, email, password, date_of_birth)"
-        }, status=400)
-    
+        return JsonResponse(
+            {
+                "error": "All fields are required (first_name, last_name, email, password, date_of_birth)"
+            },
+            status=400,
+        )
+
     # Check if user already exists
     if User.objects.filter(email=email).exists():
-        return JsonResponse({"error": "User with this email already exists"}, status=400)
-    
+        return JsonResponse(
+            {"error": "User with this email already exists"}, status=400
+        )
+
     try:
         # Create the user
         user = User.objects.create_user(
@@ -173,25 +185,404 @@ def user_signup(request):
             last_name=last_name,
             email=email,
             password=password,
-            date_of_birth=date_of_birth
+            date_of_birth=date_of_birth,
         )
-        
+
         # Log the user in automatically after signup
         login(request, user)
-        
+
         # Return user data
         user_data = {
             "id": user.id,
             "email": user.email,
             "first_name": user.first_name,
             "last_name": user.last_name,
-            "profile_picture": None
+            "profile_picture": None,
+        }
+
+        return JsonResponse(
+            {
+                "success": True,
+                "message": "Account created successfully",
+                "user": user_data,
+            }
+        )
+    except Exception as e:
+        return JsonResponse(
+            {"error": f"Failed to create account: {str(e)}"}, status=500
+        )
+
+
+def get_paginated_items(request):
+    """
+    Get active auction items with optional search and pagination.
+    Only returns items where the auction end date has not passed.
+    Query parameters:
+    - search: keyword to search in title and description
+    - start: starting index for pagination (inclusive)
+    - end: ending index for pagination (exclusive)
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    # Get query parameters
+    search_keyword = request.GET.get('search', '').strip()
+    start = request.GET.get('start')
+    end = request.GET.get('end')
+    
+    # Start with all items where auction has not ended
+    today = date.today()
+    items = Item.objects.filter(auction_end_date__gte=today)
+    
+    # Apply search filter if keyword provided
+    if search_keyword:
+        # Escape special regex characters to prevent regex injection
+        escaped_keyword = re.escape(search_keyword)
+        
+        # Filter items that contain the keyword in title or description
+        search_filter = Q(title__icontains=search_keyword) | Q(description__icontains=search_keyword)
+        items = items.filter(search_filter)
+        
+        # Calculate relevance score with different weights
+        # Priority: title exact match > title partial > description exact > description partial
+        items = items.annotate(
+            relevance_score=Case(
+                # Exact word match in title (highest priority) - weight: 100
+                When(title__iregex=r'\b' + escaped_keyword + r'\b', then=Value(100)),
+                # Partial match in title - weight: 50
+                When(title__icontains=search_keyword, then=Value(50)),
+                # Exact word match in description - weight: 20
+                When(description__iregex=r'\b' + escaped_keyword + r'\b', then=Value(20)),
+                # Partial match in description - weight: 10
+                When(description__icontains=search_keyword, then=Value(10)),
+                default=Value(0),
+                output_field=IntegerField()
+            )
+        ).order_by('-relevance_score', '-created_at')
+    else:
+        # Default ordering by creation date (newest first)
+        items = items.order_by('-created_at')
+    
+    # Apply pagination if both start and end are provided
+    if start is not None and end is not None:
+        try:
+            start = int(start)
+            end = int(end)
+            if start < 0 or end < 0:
+                return JsonResponse({"error": "Pagination indices must be non-negative"}, status=400)
+            if start > end:
+                return JsonResponse({"error": "Start index must be less than or equal to end index"}, status=400)
+            items = items[start:end]
+        except (ValueError, TypeError):
+            return JsonResponse({"error": "Invalid pagination parameters"}, status=400)
+    
+    # Serialize items
+    items_data = []
+    for item in items:
+        item_data = {
+            'id': item.id,
+            'title': item.title,
+            'description': item.description,
+            'minimum_bid': item.minimum_bid,
+            'auction_end_date': str(item.auction_end_date),
+            'created_at': item.created_at.isoformat(),
+        }
+        
+        # Add owner information
+        if item.owner:
+            item_data['owner'] = {
+                'id': item.owner.id,
+                'name': f"{item.owner.first_name} {item.owner.last_name}",
+                'email': item.owner.email
+            }
+        else:
+            item_data['owner'] = None
+        
+        # Add auction winner information
+        if item.auction_winner:
+            item_data['auction_winner'] = {
+                'id': item.auction_winner.id,
+                'name': f"{item.auction_winner.first_name} {item.auction_winner.last_name}"
+            }
+        else:
+            item_data['auction_winner'] = None
+        
+        # Add item image URL if exists
+        if item.item_image:
+            item_data['item_image'] = request.build_absolute_uri(item.item_image.url)
+        else:
+            item_data['item_image'] = None
+        
+        items_data.append(item_data)
+    
+    return JsonResponse({
+        'success': True,
+        'items': items_data,
+        'count': len(items_data)
+    })
+
+
+@login_required
+def create_item(request):
+    """Create a new auction item"""
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    # Handle JSON body
+    try:
+        data = json.loads(request.body)
+        title = data.get("title")
+        description = data.get("description")
+        minimum_bid = data.get("minimum_bid")
+        auction_end_date = data.get("auction_end_date")
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"error": "Invalid JSON data"}, status=400)
+    
+    # Validate required fields (checking for None explicitly to allow 0 values)
+    if title is None or description is None or minimum_bid is None or auction_end_date is None:
+        return JsonResponse(
+            {"error": "All fields are required (title, description, minimum_bid, auction_end_date)"},
+            status=400
+        )
+    
+    # Check for empty strings
+    if not title or not description or not auction_end_date:
+        return JsonResponse(
+            {"error": "Title, description, and auction_end_date cannot be empty"},
+            status=400
+        )
+    
+    # Validate minimum bid is positive
+    try:
+        minimum_bid = int(minimum_bid)
+        if minimum_bid <= 0:
+            return JsonResponse({"error": "Minimum bid must be greater than 0"}, status=400)
+    except (ValueError, TypeError):
+        return JsonResponse({"error": "Invalid minimum bid value"}, status=400)
+    
+    # Validate auction end date
+    try:
+        auction_end_date_obj = date.fromisoformat(auction_end_date)
+        if auction_end_date_obj <= date.today():
+            return JsonResponse({"error": "Auction end date must be in the future"}, status=400)
+    except (ValueError, TypeError):
+        return JsonResponse({"error": "Invalid date format. Use YYYY-MM-DD"}, status=400)
+    
+    try:
+        # Create the item
+        item = Item.objects.create(
+            title=title,
+            description=description,
+            owner=request.user,
+            minimum_bid=minimum_bid,
+            auction_end_date=auction_end_date_obj
+        )
+        
+        # Return item data
+        item_data = {
+            'id': item.id,
+            'title': item.title,
+            'description': item.description,
+            'minimum_bid': item.minimum_bid,
+            'auction_end_date': str(item.auction_end_date),
+            'created_at': item.created_at.isoformat(),
+            'owner': {
+                'id': request.user.id,
+                'name': f"{request.user.first_name} {request.user.last_name}",
+                'email': request.user.email
+            }
         }
         
         return JsonResponse({
-            "success": True,
-            "message": "Account created successfully",
-            "user": user_data
+            'success': True,
+            'message': 'Item created successfully',
+            'item': item_data
         })
     except Exception as e:
-        return JsonResponse({"error": f"Failed to create account: {str(e)}"}, status=500)
+        return JsonResponse(
+            {"error": f"Failed to create item: {str(e)}"}, status=500
+        )
+
+
+@login_required
+@csrf_exempt
+def update_item(request, item_id):
+    """Update an existing auction item (owner or admin only)"""
+    if request.method != "PUT":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    # Get the item
+    try:
+        item = Item.objects.get(id=item_id)
+    except Item.DoesNotExist:
+        return JsonResponse({"error": "Item not found"}, status=404)
+    
+    # Check permissions - must be owner or admin
+    if item.owner != request.user and not request.user.is_admin:
+        return JsonResponse({"error": "You don't have permission to edit this item"}, status=403)
+    
+    # Handle JSON body
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"error": "Invalid JSON data"}, status=400)
+    
+    # Update fields if provided
+    if 'title' in data:
+        item.title = data['title']
+    
+    if 'description' in data:
+        item.description = data['description']
+    
+    if 'minimum_bid' in data:
+        try:
+            minimum_bid = int(data['minimum_bid'])
+            if minimum_bid <= 0:
+                return JsonResponse({"error": "Minimum bid must be greater than 0"}, status=400)
+            item.minimum_bid = minimum_bid
+        except (ValueError, TypeError):
+            return JsonResponse({"error": "Invalid minimum bid value"}, status=400)
+    
+    if 'auction_end_date' in data:
+        try:
+            auction_end_date_obj = date.fromisoformat(data['auction_end_date'])
+            if auction_end_date_obj <= date.today():
+                return JsonResponse({"error": "Auction end date must be in the future"}, status=400)
+            item.auction_end_date = auction_end_date_obj
+        except (ValueError, TypeError):
+            return JsonResponse({"error": "Invalid date format. Use YYYY-MM-DD"}, status=400)
+    
+    try:
+        item.save()
+        
+        # Return updated item data
+        item_data = {
+            'id': item.id,
+            'title': item.title,
+            'description': item.description,
+            'minimum_bid': item.minimum_bid,
+            'auction_end_date': str(item.auction_end_date),
+            'created_at': item.created_at.isoformat(),
+        }
+        
+        if item.owner:
+            item_data['owner'] = {
+                'id': item.owner.id,
+                'name': f"{item.owner.first_name} {item.owner.last_name}",
+                'email': item.owner.email
+            }
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Item updated successfully',
+            'item': item_data
+        })
+    except Exception as e:
+        return JsonResponse(
+            {"error": f"Failed to update item: {str(e)}"}, status=500
+        )
+
+
+@login_required
+@csrf_exempt
+def delete_item(request, item_id):
+    """Delete an auction item (owner or admin only)"""
+    if request.method != "DELETE":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    # Get the item
+    try:
+        item = Item.objects.get(id=item_id)
+    except Item.DoesNotExist:
+        return JsonResponse({"error": "Item not found"}, status=404)
+    
+    # Check permissions - must be owner or admin
+    if item.owner != request.user and not request.user.is_admin:
+        return JsonResponse({"error": "You don't have permission to delete this item"}, status=403)
+    
+    try:
+        # Delete associated image if exists
+        if item.item_image:
+            item.item_image.delete(save=False)
+        
+        item.delete()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Item deleted successfully'
+        })
+    except Exception as e:
+        return JsonResponse(
+            {"error": f"Failed to delete item: {str(e)}"}, status=500
+        )
+
+
+@login_required
+def get_user_items(request, user_id=None):
+    """Get all items owned by a specific user"""
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    # If no user_id provided, use the current user
+    if user_id is None:
+        user_id = request.user.id
+    
+    # Get the user
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return JsonResponse({"error": "User not found"}, status=404)
+    
+    # Get all items owned by this user
+    items = Item.objects.filter(owner=user).order_by('-created_at')
+    
+    # Serialize items
+    items_data = []
+    for item in items:
+        item_data = {
+            'id': item.id,
+            'title': item.title,
+            'description': item.description,
+            'minimum_bid': item.minimum_bid,
+            'auction_end_date': str(item.auction_end_date),
+            'created_at': item.created_at.isoformat(),
+            'is_active': item.auction_end_date >= date.today(),
+        }
+        
+        # Add owner information
+        if item.owner:
+            item_data['owner'] = {
+                'id': item.owner.id,
+                'name': f"{item.owner.first_name} {item.owner.last_name}",
+                'email': item.owner.email
+            }
+        else:
+            item_data['owner'] = None
+        
+        # Add auction winner information
+        if item.auction_winner:
+            item_data['auction_winner'] = {
+                'id': item.auction_winner.id,
+                'name': f"{item.auction_winner.first_name} {item.auction_winner.last_name}"
+            }
+        else:
+            item_data['auction_winner'] = None
+        
+        # Add item image URL if exists
+        if item.item_image:
+            item_data['item_image'] = request.build_absolute_uri(item.item_image.url)
+        else:
+            item_data['item_image'] = None
+        
+        items_data.append(item_data)
+    
+    return JsonResponse({
+        'success': True,
+        'user': {
+            'id': user.id,
+            'name': f"{user.first_name} {user.last_name}",
+            'email': user.email
+        },
+        'items': items_data,
+        'count': len(items_data)
+    })
