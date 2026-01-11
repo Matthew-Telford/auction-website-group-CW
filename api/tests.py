@@ -5,7 +5,7 @@ from datetime import date, timedelta
 import json
 import io
 from PIL import Image
-from .models import Item
+from .models import Item, Bid
 
 User = get_user_model()
 
@@ -998,4 +998,856 @@ class GetUserItemsTest(TestCase):
         """Test only GET method is allowed"""
         self.client.force_login(self.user1)
         response = self.client.post('/users/me/items/')
+        self.assertEqual(response.status_code, 405)
+
+
+class BidModelTest(TestCase):
+    """Test Bid model"""
+    
+    def setUp(self):
+        self.user = User.objects.create_user(
+            first_name='Test',
+            last_name='User',
+            email='test@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.owner = User.objects.create_user(
+            first_name='Owner',
+            last_name='User',
+            email='owner@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.future_date = date.today() + timedelta(days=7)
+        self.item = Item.objects.create(
+            title='Test Item',
+            description='Test description',
+            owner=self.owner,
+            minimum_bid=100,
+            auction_end_date=self.future_date
+        )
+    
+    def test_create_bid(self):
+        """Test creating a bid"""
+        bid = Bid.objects.create(
+            bidder=self.user,
+            item=self.item,
+            bid_amount=150
+        )
+        
+        self.assertEqual(bid.bidder, self.user)
+        self.assertEqual(bid.item, self.item)
+        self.assertEqual(bid.bid_amount, 150)
+        self.assertIsNotNone(bid.created_at)
+    
+    def test_bid_related_names(self):
+        """Test reverse relationships work correctly"""
+        bid = Bid.objects.create(
+            bidder=self.user,
+            item=self.item,
+            bid_amount=150
+        )
+        
+        # Check that we can query bids from item
+        self.assertEqual(self.item.bid_set.count(), 1)
+        self.assertIn(bid, self.item.bid_set.all())
+
+
+class CreateBidTest(TestCase):
+    """Test create bid view"""
+    
+    def setUp(self):
+        self.client = Client()
+        self.bidder = User.objects.create_user(
+            first_name='Bidder',
+            last_name='User',
+            email='bidder@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.owner = User.objects.create_user(
+            first_name='Owner',
+            last_name='User',
+            email='owner@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.future_date = date.today() + timedelta(days=7)
+        self.item = Item.objects.create(
+            title='Test Item',
+            description='Test description',
+            owner=self.owner,
+            minimum_bid=100,
+            auction_end_date=self.future_date
+        )
+    
+    def test_create_bid_success(self):
+        """Test successfully creating a bid"""
+        self.client.force_login(self.bidder)
+        
+        response = self.client.post(
+            '/bids/create/',
+            data=json.dumps({
+                'item_id': self.item.id,
+                'bid_amount': 150
+            }),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertEqual(data['bid']['bid_amount'], 150)
+        
+        # Verify in database
+        self.assertTrue(Bid.objects.filter(item=self.item, bidder=self.bidder).exists())
+    
+    def test_create_bid_meets_minimum(self):
+        """Test bid that exactly meets minimum bid"""
+        self.client.force_login(self.bidder)
+        
+        response = self.client.post(
+            '/bids/create/',
+            data=json.dumps({
+                'item_id': self.item.id,
+                'bid_amount': 100
+            }),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Bid.objects.filter(item=self.item, bid_amount=100).exists())
+    
+    def test_create_bid_below_minimum(self):
+        """Test bid below minimum bid fails"""
+        self.client.force_login(self.bidder)
+        
+        response = self.client.post(
+            '/bids/create/',
+            data=json.dumps({
+                'item_id': self.item.id,
+                'bid_amount': 50
+            }),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertIn('minimum bid', data['error'].lower())
+    
+    def test_create_bid_higher_than_existing(self):
+        """Test creating a bid higher than existing bids"""
+        # Create first bid
+        Bid.objects.create(bidder=self.bidder, item=self.item, bid_amount=150)
+        
+        # Create another user and bid higher
+        user2 = User.objects.create_user(
+            first_name='User2',
+            last_name='Test',
+            email='user2@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.client.force_login(user2)
+        
+        response = self.client.post(
+            '/bids/create/',
+            data=json.dumps({
+                'item_id': self.item.id,
+                'bid_amount': 200
+            }),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Bid.objects.filter(item=self.item).count(), 2)
+    
+    def test_create_bid_equal_to_highest(self):
+        """Test bid equal to highest bid fails"""
+        # Create first bid
+        Bid.objects.create(bidder=self.bidder, item=self.item, bid_amount=150)
+        
+        # Try to bid same amount
+        user2 = User.objects.create_user(
+            first_name='User2',
+            last_name='Test',
+            email='user2@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.client.force_login(user2)
+        
+        response = self.client.post(
+            '/bids/create/',
+            data=json.dumps({
+                'item_id': self.item.id,
+                'bid_amount': 150
+            }),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertIn('greater than', data['error'].lower())
+    
+    def test_create_bid_lower_than_highest(self):
+        """Test bid lower than highest bid fails"""
+        # Create first bid
+        Bid.objects.create(bidder=self.bidder, item=self.item, bid_amount=150)
+        
+        # Try to bid lower amount
+        user2 = User.objects.create_user(
+            first_name='User2',
+            last_name='Test',
+            email='user2@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.client.force_login(user2)
+        
+        response = self.client.post(
+            '/bids/create/',
+            data=json.dumps({
+                'item_id': self.item.id,
+                'bid_amount': 120
+            }),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 400)
+    
+    def test_owner_cannot_bid_on_own_item(self):
+        """Test owner cannot bid on their own item"""
+        self.client.force_login(self.owner)
+        
+        response = self.client.post(
+            '/bids/create/',
+            data=json.dumps({
+                'item_id': self.item.id,
+                'bid_amount': 150
+            }),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 403)
+        data = response.json()
+        self.assertIn('own item', data['error'].lower())
+    
+    def test_cannot_bid_on_expired_auction(self):
+        """Test cannot bid on expired auction"""
+        past_date = date.today() - timedelta(days=1)
+        expired_item = Item.objects.create(
+            title='Expired Item',
+            description='Test description',
+            owner=self.owner,
+            minimum_bid=100,
+            auction_end_date=past_date
+        )
+        
+        self.client.force_login(self.bidder)
+        
+        response = self.client.post(
+            '/bids/create/',
+            data=json.dumps({
+                'item_id': expired_item.id,
+                'bid_amount': 150
+            }),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        self.assertIn('ended', data['error'].lower())
+    
+    def test_create_bid_invalid_amount(self):
+        """Test creating bid with invalid amount"""
+        self.client.force_login(self.bidder)
+        
+        response = self.client.post(
+            '/bids/create/',
+            data=json.dumps({
+                'item_id': self.item.id,
+                'bid_amount': -10
+            }),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 400)
+    
+    def test_create_bid_missing_fields(self):
+        """Test creating bid with missing fields"""
+        self.client.force_login(self.bidder)
+        
+        response = self.client.post(
+            '/bids/create/',
+            data=json.dumps({
+                'item_id': self.item.id
+            }),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 400)
+    
+    def test_create_bid_nonexistent_item(self):
+        """Test creating bid for non-existent item"""
+        self.client.force_login(self.bidder)
+        
+        response = self.client.post(
+            '/bids/create/',
+            data=json.dumps({
+                'item_id': 99999,
+                'bid_amount': 150
+            }),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 404)
+    
+    def test_create_bid_requires_authentication(self):
+        """Test creating bid requires login"""
+        response = self.client.post(
+            '/bids/create/',
+            data=json.dumps({
+                'item_id': self.item.id,
+                'bid_amount': 150
+            }),
+            content_type='application/json'
+        )
+        
+        self.assertEqual(response.status_code, 302)  # Redirect to login
+    
+    def test_post_method_only(self):
+        """Test only POST method is allowed"""
+        self.client.force_login(self.bidder)
+        response = self.client.get('/bids/create/')
+        self.assertEqual(response.status_code, 405)
+
+
+class DeleteBidTest(TestCase):
+    """Test delete bid view"""
+    
+    def setUp(self):
+        self.client = Client()
+        self.bidder = User.objects.create_user(
+            first_name='Bidder',
+            last_name='User',
+            email='bidder@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.other_user = User.objects.create_user(
+            first_name='Other',
+            last_name='User',
+            email='other@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.admin = User.objects.create_superuser(
+            first_name='Admin',
+            last_name='User',
+            email='admin@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.owner = User.objects.create_user(
+            first_name='Owner',
+            last_name='User',
+            email='owner@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.future_date = date.today() + timedelta(days=7)
+        self.item = Item.objects.create(
+            title='Test Item',
+            description='Test description',
+            owner=self.owner,
+            minimum_bid=100,
+            auction_end_date=self.future_date
+        )
+    
+    def test_bidder_can_delete_own_bid(self):
+        """Test bidder can delete their own bid"""
+        bid = Bid.objects.create(
+            bidder=self.bidder,
+            item=self.item,
+            bid_amount=150
+        )
+        bid_id = bid.id
+        
+        self.client.force_login(self.bidder)
+        response = self.client.delete(f'/bids/{bid_id}/delete/')
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        
+        # Verify deleted from database
+        self.assertFalse(Bid.objects.filter(id=bid_id).exists())
+    
+    def test_admin_can_delete_any_bid(self):
+        """Test admin can delete any bid"""
+        bid = Bid.objects.create(
+            bidder=self.bidder,
+            item=self.item,
+            bid_amount=150
+        )
+        bid_id = bid.id
+        
+        self.client.force_login(self.admin)
+        response = self.client.delete(f'/bids/{bid_id}/delete/')
+        
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Bid.objects.filter(id=bid_id).exists())
+    
+    def test_non_bidder_cannot_delete_bid(self):
+        """Test non-bidder cannot delete bid"""
+        bid = Bid.objects.create(
+            bidder=self.bidder,
+            item=self.item,
+            bid_amount=150
+        )
+        
+        self.client.force_login(self.other_user)
+        response = self.client.delete(f'/bids/{bid.id}/delete/')
+        
+        self.assertEqual(response.status_code, 403)
+        data = response.json()
+        self.assertIn('permission', data['error'].lower())
+        
+        # Verify not deleted
+        self.assertTrue(Bid.objects.filter(id=bid.id).exists())
+    
+    def test_delete_nonexistent_bid(self):
+        """Test deleting non-existent bid returns 404"""
+        self.client.force_login(self.bidder)
+        
+        response = self.client.delete('/bids/99999/delete/')
+        self.assertEqual(response.status_code, 404)
+    
+    def test_delete_requires_authentication(self):
+        """Test delete requires login"""
+        bid = Bid.objects.create(
+            bidder=self.bidder,
+            item=self.item,
+            bid_amount=150
+        )
+        
+        response = self.client.delete(f'/bids/{bid.id}/delete/')
+        self.assertEqual(response.status_code, 302)  # Redirect to login
+    
+    def test_delete_method_only(self):
+        """Test only DELETE method is allowed"""
+        bid = Bid.objects.create(
+            bidder=self.bidder,
+            item=self.item,
+            bid_amount=150
+        )
+        
+        self.client.force_login(self.bidder)
+        response = self.client.get(f'/bids/{bid.id}/delete/')
+        self.assertEqual(response.status_code, 405)
+
+
+class GetUserBidsTest(TestCase):
+    """Test get user bids view"""
+    
+    def setUp(self):
+        self.client = Client()
+        self.user1 = User.objects.create_user(
+            first_name='User',
+            last_name='One',
+            email='user1@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.user2 = User.objects.create_user(
+            first_name='User',
+            last_name='Two',
+            email='user2@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.admin = User.objects.create_superuser(
+            first_name='Admin',
+            last_name='User',
+            email='admin@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.owner = User.objects.create_user(
+            first_name='Owner',
+            last_name='User',
+            email='owner@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        
+        future_date = date.today() + timedelta(days=7)
+        
+        # Create items
+        self.item1 = Item.objects.create(
+            title='Item 1',
+            description='Description',
+            owner=self.owner,
+            minimum_bid=100,
+            auction_end_date=future_date
+        )
+        self.item2 = Item.objects.create(
+            title='Item 2',
+            description='Description',
+            owner=self.owner,
+            minimum_bid=200,
+            auction_end_date=future_date
+        )
+        
+        # User1's bids
+        Bid.objects.create(bidder=self.user1, item=self.item1, bid_amount=150)
+        Bid.objects.create(bidder=self.user1, item=self.item2, bid_amount=250)
+        
+        # User2's bid
+        Bid.objects.create(bidder=self.user2, item=self.item1, bid_amount=200)
+    
+    def test_get_own_bids(self):
+        """Test getting own bids"""
+        self.client.force_login(self.user1)
+        
+        response = self.client.get('/users/me/bids/')
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertEqual(data['count'], 2)
+        
+        # Verify bids belong to user1
+        for bid in data['bids']:
+            self.assertEqual(bid['bidder']['id'], self.user1.id)
+    
+    def test_get_specific_user_bids_as_admin(self):
+        """Test admin can get specific user's bids"""
+        self.client.force_login(self.admin)
+        
+        response = self.client.get(f'/users/{self.user2.id}/bids/')
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['count'], 1)
+        self.assertEqual(data['bids'][0]['bidder']['id'], self.user2.id)
+    
+    def test_cannot_get_other_user_bids(self):
+        """Test user cannot get another user's bids"""
+        self.client.force_login(self.user1)
+        
+        response = self.client.get(f'/users/{self.user2.id}/bids/')
+        
+        self.assertEqual(response.status_code, 403)
+        data = response.json()
+        self.assertIn('permission', data['error'].lower())
+    
+    def test_get_bids_for_nonexistent_user(self):
+        """Test getting bids for non-existent user"""
+        self.client.force_login(self.admin)
+        
+        response = self.client.get('/users/99999/bids/')
+        self.assertEqual(response.status_code, 404)
+    
+    def test_requires_authentication(self):
+        """Test get user bids requires login"""
+        response = self.client.get('/users/me/bids/')
+        self.assertEqual(response.status_code, 302)  # Redirect to login
+    
+    def test_get_method_only(self):
+        """Test only GET method is allowed"""
+        self.client.force_login(self.user1)
+        response = self.client.post('/users/me/bids/')
+        self.assertEqual(response.status_code, 405)
+
+
+class GetItemBidsTest(TestCase):
+    """Test get item bids view"""
+    
+    def setUp(self):
+        self.client = Client()
+        self.user1 = User.objects.create_user(
+            first_name='User',
+            last_name='One',
+            email='user1@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.user2 = User.objects.create_user(
+            first_name='User',
+            last_name='Two',
+            email='user2@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.owner = User.objects.create_user(
+            first_name='Owner',
+            last_name='User',
+            email='owner@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        
+        future_date = date.today() + timedelta(days=7)
+        
+        # Create item
+        self.item = Item.objects.create(
+            title='Test Item',
+            description='Description',
+            owner=self.owner,
+            minimum_bid=100,
+            auction_end_date=future_date
+        )
+        
+        # Create bids
+        Bid.objects.create(bidder=self.user1, item=self.item, bid_amount=150)
+        Bid.objects.create(bidder=self.user2, item=self.item, bid_amount=200)
+        Bid.objects.create(bidder=self.user1, item=self.item, bid_amount=250)
+    
+    def test_get_item_bids(self):
+        """Test getting all bids for an item"""
+        self.client.force_login(self.user1)
+        
+        response = self.client.get(f'/items/{self.item.id}/bids/')
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertEqual(data['count'], 3)
+        
+        # Verify bids are sorted by amount (highest first)
+        self.assertEqual(data['bids'][0]['bid_amount'], 250)
+        self.assertEqual(data['bids'][1]['bid_amount'], 200)
+        self.assertEqual(data['bids'][2]['bid_amount'], 150)
+    
+    def test_get_bids_for_nonexistent_item(self):
+        """Test getting bids for non-existent item"""
+        self.client.force_login(self.user1)
+        
+        response = self.client.get('/items/99999/bids/')
+        self.assertEqual(response.status_code, 404)
+    
+    def test_get_bids_for_item_with_no_bids(self):
+        """Test getting bids for item with no bids"""
+        future_date = date.today() + timedelta(days=7)
+        item_no_bids = Item.objects.create(
+            title='No Bids Item',
+            description='Description',
+            owner=self.owner,
+            minimum_bid=100,
+            auction_end_date=future_date
+        )
+        
+        self.client.force_login(self.user1)
+        response = self.client.get(f'/items/{item_no_bids.id}/bids/')
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['count'], 0)
+        self.assertEqual(len(data['bids']), 0)
+    
+    def test_requires_authentication(self):
+        """Test get item bids requires login"""
+        response = self.client.get(f'/items/{self.item.id}/bids/')
+        self.assertEqual(response.status_code, 302)  # Redirect to login
+    
+    def test_get_method_only(self):
+        """Test only GET method is allowed"""
+        self.client.force_login(self.user1)
+        response = self.client.post(f'/items/{self.item.id}/bids/')
+        self.assertEqual(response.status_code, 405)
+
+
+class GetUserBiddedItemsTest(TestCase):
+    """Test get user bidded items view"""
+    
+    def setUp(self):
+        self.client = Client()
+        self.user1 = User.objects.create_user(
+            first_name='User',
+            last_name='One',
+            email='user1@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.user2 = User.objects.create_user(
+            first_name='User',
+            last_name='Two',
+            email='user2@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.admin = User.objects.create_superuser(
+            first_name='Admin',
+            last_name='User',
+            email='admin@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        self.owner = User.objects.create_user(
+            first_name='Owner',
+            last_name='User',
+            email='owner@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        
+        future_date = date.today() + timedelta(days=7)
+        past_date = date.today() - timedelta(days=1)
+        
+        # Create active item
+        self.active_item = Item.objects.create(
+            title='Active Item',
+            description='Description',
+            owner=self.owner,
+            minimum_bid=100,
+            auction_end_date=future_date
+        )
+        
+        # Create expired item (won by user1)
+        self.won_item = Item.objects.create(
+            title='Won Item',
+            description='Description',
+            owner=self.owner,
+            minimum_bid=100,
+            auction_end_date=past_date
+        )
+        
+        # Create expired item (lost by user1)
+        self.lost_item = Item.objects.create(
+            title='Lost Item',
+            description='Description',
+            owner=self.owner,
+            minimum_bid=100,
+            auction_end_date=past_date
+        )
+        
+        # User1 bids on active item (winning)
+        Bid.objects.create(bidder=self.user1, item=self.active_item, bid_amount=150)
+        
+        # User1 bids on won item (highest bid)
+        Bid.objects.create(bidder=self.user1, item=self.won_item, bid_amount=200)
+        
+        # User1 bids on lost item (not highest)
+        Bid.objects.create(bidder=self.user1, item=self.lost_item, bid_amount=150)
+        Bid.objects.create(bidder=self.user2, item=self.lost_item, bid_amount=200)
+    
+    def test_get_own_bidded_items(self):
+        """Test getting own bidded items"""
+        self.client.force_login(self.user1)
+        
+        response = self.client.get('/users/me/bidded-items/')
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['success'])
+        self.assertEqual(data['count'], 3)
+    
+    def test_bidded_items_show_correct_status(self):
+        """Test bidded items show correct auction status"""
+        self.client.force_login(self.user1)
+        
+        response = self.client.get('/users/me/bidded-items/')
+        data = response.json()
+        
+        items_by_title = {item['title']: item for item in data['items']}
+        
+        # Check active item status
+        self.assertEqual(items_by_title['Active Item']['status'], 'ongoing')
+        self.assertTrue(items_by_title['Active Item']['is_winning'])
+        
+        # Check won item status
+        self.assertEqual(items_by_title['Won Item']['status'], 'won')
+        self.assertTrue(items_by_title['Won Item']['is_winning'])
+        
+        # Check lost item status
+        self.assertEqual(items_by_title['Lost Item']['status'], 'lost')
+        self.assertFalse(items_by_title['Lost Item']['is_winning'])
+    
+    def test_bidded_items_show_latest_bid(self):
+        """Test bidded items show user's latest bid"""
+        self.client.force_login(self.user1)
+        
+        # User1 makes multiple bids on active item
+        Bid.objects.create(bidder=self.user1, item=self.active_item, bid_amount=180)
+        Bid.objects.create(bidder=self.user1, item=self.active_item, bid_amount=220)
+        
+        response = self.client.get('/users/me/bidded-items/')
+        data = response.json()
+        
+        active_item_data = next(
+            item for item in data['items'] if item['title'] == 'Active Item'
+        )
+        
+        # Should show highest bid amount (220)
+        self.assertEqual(active_item_data['my_latest_bid']['bid_amount'], 220)
+    
+    def test_bidded_items_no_duplicates(self):
+        """Test items appear only once even with multiple bids"""
+        self.client.force_login(self.user1)
+        
+        # Create multiple bids on same item
+        Bid.objects.create(bidder=self.user1, item=self.active_item, bid_amount=180)
+        Bid.objects.create(bidder=self.user1, item=self.active_item, bid_amount=200)
+        Bid.objects.create(bidder=self.user1, item=self.active_item, bid_amount=220)
+        
+        response = self.client.get('/users/me/bidded-items/')
+        data = response.json()
+        
+        # Count how many times active_item appears
+        active_item_count = sum(
+            1 for item in data['items'] if item['title'] == 'Active Item'
+        )
+        
+        self.assertEqual(active_item_count, 1)
+    
+    def test_admin_can_view_other_user_bidded_items(self):
+        """Test admin can view other user's bidded items"""
+        self.client.force_login(self.admin)
+        
+        response = self.client.get(f'/users/{self.user1.id}/bidded-items/')
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['user']['id'], self.user1.id)
+    
+    def test_cannot_view_other_user_bidded_items(self):
+        """Test user cannot view another user's bidded items"""
+        self.client.force_login(self.user2)
+        
+        response = self.client.get(f'/users/{self.user1.id}/bidded-items/')
+        
+        self.assertEqual(response.status_code, 403)
+        data = response.json()
+        self.assertIn('permission', data['error'].lower())
+    
+    def test_user_with_no_bids(self):
+        """Test user with no bids returns empty list"""
+        user_no_bids = User.objects.create_user(
+            first_name='No',
+            last_name='Bids',
+            email='nobids@example.com',
+            date_of_birth=date(1990, 1, 1),
+            password='testpass123'
+        )
+        
+        self.client.force_login(user_no_bids)
+        response = self.client.get('/users/me/bidded-items/')
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['count'], 0)
+        self.assertEqual(len(data['items']), 0)
+    
+    def test_requires_authentication(self):
+        """Test get bidded items requires login"""
+        response = self.client.get('/users/me/bidded-items/')
+        self.assertEqual(response.status_code, 302)  # Redirect to login
+    
+    def test_get_method_only(self):
+        """Test only GET method is allowed"""
+        self.client.force_login(self.user1)
+        response = self.client.post('/users/me/bidded-items/')
         self.assertEqual(response.status_code, 405)

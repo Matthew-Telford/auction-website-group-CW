@@ -3,8 +3,8 @@ from django.http import HttpResponse, HttpRequest, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.contrib.auth.decorators import login_required
-from django.db.models import Q, Case, When, IntegerField, Value, F
-from .models import User, Item
+from django.db.models import Q, Case, When, IntegerField, Value, F, Max
+from .models import User, Item, Bid
 import json
 import re
 from datetime import date
@@ -575,6 +575,377 @@ def get_user_items(request, user_id=None):
             item_data['item_image'] = None
         
         items_data.append(item_data)
+    
+    return JsonResponse({
+        'success': True,
+        'user': {
+            'id': user.id,
+            'name': f"{user.first_name} {user.last_name}",
+            'email': user.email
+        },
+        'items': items_data,
+        'count': len(items_data)
+    })
+
+
+@login_required
+def create_bid(request):
+    """Create a new bid on an item"""
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    # Handle JSON body
+    try:
+        data = json.loads(request.body)
+        item_id = data.get("item_id")
+        bid_amount = data.get("bid_amount")
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"error": "Invalid JSON data"}, status=400)
+    
+    # Validate required fields
+    if item_id is None or bid_amount is None:
+        return JsonResponse(
+            {"error": "Both item_id and bid_amount are required"},
+            status=400
+        )
+    
+    # Get the item
+    try:
+        item = Item.objects.get(id=item_id)
+    except Item.DoesNotExist:
+        return JsonResponse({"error": "Item not found"}, status=404)
+    
+    # Check if auction has ended
+    if item.auction_end_date < date.today():
+        return JsonResponse(
+            {"error": "Auction has ended for this item"},
+            status=400
+        )
+    
+    # Check if bidder is the owner
+    if item.owner == request.user:
+        return JsonResponse(
+            {"error": "You cannot bid on your own item"},
+            status=403
+        )
+    
+    # Validate bid amount
+    try:
+        bid_amount = int(bid_amount)
+        if bid_amount <= 0:
+            return JsonResponse({"error": "Bid amount must be greater than 0"}, status=400)
+    except (ValueError, TypeError):
+        return JsonResponse({"error": "Invalid bid amount"}, status=400)
+    
+    # Get the current highest bid for this item
+    highest_bid = Bid.objects.filter(item=item).aggregate(Max('bid_amount'))['bid_amount__max']
+    
+    # Determine minimum required bid
+    if highest_bid is not None:
+        # There are existing bids, must be higher than the highest bid
+        if bid_amount <= highest_bid:
+            return JsonResponse(
+                {"error": f"Bid must be greater than the current highest bid of {highest_bid}"},
+                status=400
+            )
+    else:
+        # No existing bids, must meet or exceed minimum bid
+        if bid_amount < item.minimum_bid:
+            return JsonResponse(
+                {"error": f"Bid must be at least the minimum bid of {item.minimum_bid}"},
+                status=400
+            )
+    
+    try:
+        # Create the bid
+        bid = Bid.objects.create(
+            bidder=request.user,
+            item=item,
+            bid_amount=bid_amount
+        )
+        
+        # Return bid data
+        bid_data = {
+            'id': bid.id,
+            'bid_amount': bid.bid_amount,
+            'created_at': bid.created_at.isoformat(),
+            'bidder': {
+                'id': request.user.id,
+                'name': f"{request.user.first_name} {request.user.last_name}",
+                'email': request.user.email
+            },
+            'item': {
+                'id': item.id,
+                'title': item.title
+            }
+        }
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Bid placed successfully',
+            'bid': bid_data
+        })
+    except Exception as e:
+        return JsonResponse(
+            {"error": f"Failed to create bid: {str(e)}"}, status=500
+        )
+
+
+@login_required
+@csrf_exempt
+def delete_bid(request, bid_id):
+    """Delete a bid (bidder or admin only)"""
+    if request.method != "DELETE":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    # Get the bid
+    try:
+        bid = Bid.objects.get(id=bid_id)
+    except Bid.DoesNotExist:
+        return JsonResponse({"error": "Bid not found"}, status=404)
+    
+    # Check permissions - must be bidder or admin
+    if bid.bidder != request.user and not request.user.is_admin:
+        return JsonResponse({"error": "You don't have permission to delete this bid"}, status=403)
+    
+    try:
+        bid.delete()
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Bid deleted successfully'
+        })
+    except Exception as e:
+        return JsonResponse(
+            {"error": f"Failed to delete bid: {str(e)}"}, status=500
+        )
+
+
+@login_required
+def get_user_bids(request, user_id=None):
+    """Get all bids made by a specific user (own bids only, unless admin)"""
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    # If no user_id provided, use the current user
+    if user_id is None:
+        user_id = request.user.id
+    
+    # Get the user
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return JsonResponse({"error": "User not found"}, status=404)
+    
+    # Check permissions - users can only view their own bids unless they're an admin
+    if user != request.user and not request.user.is_admin:
+        return JsonResponse(
+            {"error": "You don't have permission to view another user's bids"},
+            status=403
+        )
+    
+    # Get all bids made by this user
+    bids = Bid.objects.filter(bidder=user).select_related('item').order_by('-created_at')
+    
+    # Serialize bids
+    bids_data = []
+    for bid in bids:
+        bid_data = {
+            'id': bid.id,
+            'bid_amount': bid.bid_amount,
+            'created_at': bid.created_at.isoformat(),
+        }
+        
+        # Add bidder information
+        if bid.bidder:
+            bid_data['bidder'] = {
+                'id': bid.bidder.id,
+                'name': f"{bid.bidder.first_name} {bid.bidder.last_name}",
+                'email': bid.bidder.email
+            }
+        else:
+            bid_data['bidder'] = None
+        
+        # Add item information
+        if bid.item:
+            bid_data['item'] = {
+                'id': bid.item.id,
+                'title': bid.item.title,
+                'auction_end_date': str(bid.item.auction_end_date),
+                'is_active': bid.item.auction_end_date >= date.today()
+            }
+        else:
+            bid_data['item'] = None
+        
+        bids_data.append(bid_data)
+    
+    return JsonResponse({
+        'success': True,
+        'user': {
+            'id': user.id,
+            'name': f"{user.first_name} {user.last_name}",
+            'email': user.email
+        },
+        'bids': bids_data,
+        'count': len(bids_data)
+    })
+
+
+@login_required
+def get_item_bids(request, item_id):
+    """Get all bids for a specific item"""
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    # Get the item
+    try:
+        item = Item.objects.get(id=item_id)
+    except Item.DoesNotExist:
+        return JsonResponse({"error": "Item not found"}, status=404)
+    
+    # Get all bids for this item
+    bids = Bid.objects.filter(item=item).select_related('bidder').order_by('-bid_amount')
+    
+    # Serialize bids
+    bids_data = []
+    for bid in bids:
+        bid_data = {
+            'id': bid.id,
+            'bid_amount': bid.bid_amount,
+            'created_at': bid.created_at.isoformat(),
+        }
+        
+        # Add bidder information
+        if bid.bidder:
+            bid_data['bidder'] = {
+                'id': bid.bidder.id,
+                'name': f"{bid.bidder.first_name} {bid.bidder.last_name}",
+                'email': bid.bidder.email
+            }
+        else:
+            bid_data['bidder'] = None
+        
+        bids_data.append(bid_data)
+    
+    return JsonResponse({
+        'success': True,
+        'item': {
+            'id': item.id,
+            'title': item.title,
+            'minimum_bid': item.minimum_bid,
+            'auction_end_date': str(item.auction_end_date),
+            'is_active': item.auction_end_date >= date.today()
+        },
+        'bids': bids_data,
+        'count': len(bids_data)
+    })
+
+
+@login_required
+def get_user_bidded_items(request, user_id=None):
+    """
+    Get all items a user has bid on with their most recent bid and auction status.
+    Users can only view their own bidded items unless they're an admin.
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    # If no user_id provided, use the current user
+    if user_id is None:
+        user_id = request.user.id
+    
+    # Get the user
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return JsonResponse({"error": "User not found"}, status=404)
+    
+    # Check permissions - users can only view their own bidded items unless they're an admin
+    if user != request.user and not request.user.is_admin:
+        return JsonResponse(
+            {"error": "You don't have permission to view another user's bidded items"},
+            status=403
+        )
+    
+    # Get all distinct items the user has bid on
+    item_ids = Bid.objects.filter(bidder=user).values_list('item_id', flat=True).distinct()
+    items = Item.objects.filter(id__in=item_ids).select_related('owner')
+    
+    today = date.today()
+    items_data = []
+    
+    for item in items:
+        # Get the user's most recent bid on this item
+        user_latest_bid = Bid.objects.filter(
+            bidder=user,
+            item=item
+        ).order_by('-created_at').first()
+        
+        # Get the highest bid on this item
+        highest_bid = Bid.objects.filter(item=item).aggregate(Max('bid_amount'))['bid_amount__max']
+        
+        # Get all bids with the highest amount (in case of ties)
+        highest_bidders = Bid.objects.filter(
+            item=item,
+            bid_amount=highest_bid
+        ).values_list('bidder_id', flat=True)
+        
+        # Determine auction status
+        if item.auction_end_date >= today:
+            status = "ongoing"
+            is_winning = user.id in highest_bidders if highest_bidders else False
+        else:
+            # Auction has ended
+            if user.id in highest_bidders:
+                status = "won"
+                is_winning = True
+            else:
+                status = "lost"
+                is_winning = False
+        
+        # Build item data
+        item_data = {
+            'id': item.id,
+            'title': item.title,
+            'description': item.description,
+            'minimum_bid': item.minimum_bid,
+            'auction_end_date': str(item.auction_end_date),
+            'is_active': item.auction_end_date >= today,
+            'status': status,
+            'is_winning': is_winning,
+            'highest_bid': highest_bid,
+        }
+        
+        # Add owner information
+        if item.owner:
+            item_data['owner'] = {
+                'id': item.owner.id,
+                'name': f"{item.owner.first_name} {item.owner.last_name}",
+                'email': item.owner.email
+            }
+        else:
+            item_data['owner'] = None
+        
+        # Add item image URL if exists
+        if item.item_image:
+            item_data['item_image'] = request.build_absolute_uri(item.item_image.url)
+        else:
+            item_data['item_image'] = None
+        
+        # Add user's most recent bid information
+        if user_latest_bid:
+            item_data['my_latest_bid'] = {
+                'id': user_latest_bid.id,
+                'bid_amount': user_latest_bid.bid_amount,
+                'created_at': user_latest_bid.created_at.isoformat()
+            }
+        else:
+            item_data['my_latest_bid'] = None
+        
+        items_data.append(item_data)
+    
+    # Sort by auction end date (active auctions first, then by end date)
+    items_data.sort(key=lambda x: (x['auction_end_date'] < str(today), x['auction_end_date']))
     
     return JsonResponse({
         'success': True,
