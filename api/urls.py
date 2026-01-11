@@ -25,6 +25,11 @@ from .views import (
     get_user_profile,
     upload_profile_picture,
     delete_profile_picture,
+    get_paginated_items,
+    create_item,
+    update_item,
+    delete_item,
+    get_user_items,
 )
 
 urlpatterns = [
@@ -34,4 +39,10 @@ urlpatterns = [
     path('profile/', get_user_profile, name='user_profile'),
     path('profile/picture/upload/', upload_profile_picture, name='upload_profile_picture'),
     path('profile/picture/delete/', delete_profile_picture, name='delete_profile_picture'),
+    path('items/', get_paginated_items, name='get_items'),
+    path('items/create/', create_item, name='create_item'),
+    path('items/<int:item_id>/update/', update_item, name='update_item'),
+    path('items/<int:item_id>/delete/', delete_item, name='delete_item'),
+    path('users/<int:user_id>/items/', get_user_items, name='get_user_items'),
+    path('users/me/items/', get_user_items, name='get_my_items'),
 ]

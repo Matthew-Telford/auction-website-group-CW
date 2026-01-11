@@ -10,7 +10,9 @@ const goLogin = () => {
 </script>
 
 <template>
-  <div class="flex justify-center items-center w-full h-full bg-slate-500">
+  <div
+    class="flex justify-center items-center min-w-svw min-h-svh w-full h-full bg-slate-500"
+  >
     <Button @click="goLogin">Login</Button>
   </div>
 </template>

@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import svgLoader from "vite-svg-loader";
 import vue from "@vitejs/plugin-vue";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
@@ -10,7 +11,7 @@ export default defineConfig(({ mode }) => ({
     emptyOutDir: true,
     outDir: "../api/static/api/spa",
   },
-  plugins: [vue(), tailwindcss()],
+  plugins: [vue(), tailwindcss(), svgLoader()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
