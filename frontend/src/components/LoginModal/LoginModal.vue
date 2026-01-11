@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, defineModel } from "vue";
+import { useRouter } from "vue-router";
 import { useForm } from "vee-validate";
 import { toTypedSchema } from "@vee-validate/zod";
 import { Input } from "@/components/ui/input";
@@ -21,9 +21,10 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 
+const router = useRouter();
+
 const emit = defineEmits<{
   (e: "loginPressed", email: string, password: string): void;
-  (e: "signupPressed"): void;
 }>();
 
 const loginValidationSchema = toTypedSchema(
@@ -48,7 +49,7 @@ const onSubmit = loginForm.handleSubmit((values) => {
 });
 
 const handleSignup = () => {
-  emit("signupPressed");
+  router.push("/signup");
 };
 
 //const errors = defineModel<JSON>();

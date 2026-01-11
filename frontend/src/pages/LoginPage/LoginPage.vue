@@ -50,10 +50,6 @@ const openErrorPopup = () => {
     },
   });
 };
-
-const handleGoToSignup = () => {
-  router.push("/signup");
-};
 </script>
 
 <template>
@@ -64,7 +60,6 @@ const handleGoToSignup = () => {
           handleLogin(email, password);
         }
       "
-      @signupPressed="handleGoToSignup"
     ></LoginModal>
   </div>
 </template>
