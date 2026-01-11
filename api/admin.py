@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import User
+from .models import User, Item, Bid
 from django import forms
 from django.contrib.auth.models import Group
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
@@ -100,3 +100,21 @@ admin.site.register(User, UserAdmin)
 # ... and, since we're not using Django's built-in permissions,
 # unregister the Group model from admin.
 admin.site.unregister(Group)
+
+
+# Register Item model
+@admin.register(Item)
+class ItemAdmin(admin.ModelAdmin):
+    list_display = ['title', 'owner', 'minimum_bid', 'auction_end_date', 'created_at']
+    list_filter = ['auction_end_date', 'created_at']
+    search_fields = ['title', 'description']
+    readonly_fields = ['created_at']
+
+
+# Register Bid model
+@admin.register(Bid)
+class BidAdmin(admin.ModelAdmin):
+    list_display = ['item', 'bidder', 'bid_amount', 'created_at']
+    list_filter = ['created_at']
+    search_fields = ['item__title', 'bidder__email']
+    readonly_fields = ['created_at']

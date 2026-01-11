@@ -80,10 +80,14 @@ class Item(models.Model):
     title = models.CharField(max_length=80)
     description = models.TextField(max_length=1250)
     # Allow the owner column to store a null value as if the owner deletes there account after an auction has ended we still want record of the auction
-    owner = models.ForeignKey(User, null=True, on_delete=models.SET_NULL, related_name='owned_items')
+    owner = models.ForeignKey(
+        User, null=True, on_delete=models.SET_NULL, related_name="owned_items"
+    )
     # Allow the auction_winner column to store a null value as if the auction_winner deletes there account after an auction has ended we still want
     # record of the auction
-    auction_winner = models.ForeignKey(User, null=True, on_delete=models.SET_NULL, related_name='won_items')
+    auction_winner = models.ForeignKey(
+        User, null=True, on_delete=models.SET_NULL, related_name="won_items"
+    )
     minimum_bid = models.IntegerField()
     auction_end_date = models.DateField()
     item_image = models.ImageField(
@@ -110,6 +114,18 @@ class Item(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class Bid(models.Model):
+    bidder = models.ForeignKey(User, null=True, on_delete=models.SET_NULL)
+    item = models.ForeignKey(Item, on_delete=models.CASCADE)
+    bid_amount = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    REQUIRED_FIELDS = [
+        "bidder",
+        "item",
+        "bid_amount",
+    ]
 
 
 class PageView(models.Model):
