@@ -4,10 +4,13 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q, Case, When, IntegerField, Value, F, Max
+from django.core.files.base import ContentFile
 from .models import User, Item, Bid, Message
 import json
 import re
+import io
 from datetime import date
+from PIL import Image
 
 
 @ensure_csrf_cookie
@@ -135,36 +138,72 @@ def upload_profile_picture(request):
     user = request.user
     profile_picture = request.FILES["profile_picture"]
 
-    # Validate file type
-    allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"]
-    if profile_picture.content_type not in allowed_types:
-        return JsonResponse(
-            {"error": "Invalid file type. Allowed types: JPEG, PNG, GIF, WebP"},
-            status=400,
-        )
-
-    # Validate file size (e.g., max 5MB)
+    # Validate file size BEFORE processing (max 5MB)
     max_size = 5 * 1024 * 1024  # 5MB in bytes
     if profile_picture.size > max_size:
         return JsonResponse(
             {"error": "File too large. Maximum size is 5MB"}, status=400
         )
 
-    # Delete old profile picture if exists
-    if user.profile_picture:
-        user.profile_picture.delete(save=False)
-
-    # Save new profile picture
-    user.profile_picture = profile_picture
-    user.save()
-
-    return JsonResponse(
-        {
-            "success": True,
-            "message": "Profile picture uploaded successfully",
-            "profile_picture": request.build_absolute_uri(user.profile_picture.url),
-        }
-    )
+    try:
+        # Open and verify the image using Pillow
+        image = Image.open(profile_picture)
+        
+        # Verify it's actually an image (this will raise an exception if not)
+        image.verify()
+        
+        # Re-open the image after verify() (verify() closes the file)
+        profile_picture.seek(0)
+        image = Image.open(profile_picture)
+        
+        # Convert RGBA to RGB if necessary (for JPEG compatibility)
+        if image.mode in ('RGBA', 'LA', 'P'):
+            background = Image.new('RGB', image.size, (255, 255, 255))
+            if image.mode == 'P':
+                image = image.convert('RGBA')
+            background.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
+            image = background
+        
+        # Resize if image is too large (optional but recommended)
+        max_dimension = 1024  # Max width or height
+        if image.width > max_dimension or image.height > max_dimension:
+            image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+        
+        # Save the processed image to a BytesIO buffer
+        output = io.BytesIO()
+        image_format = 'JPEG'  # Standardize to JPEG
+        image.save(output, format=image_format, quality=85, optimize=True)
+        output.seek(0)
+        
+        # Delete old profile picture if exists
+        if user.profile_picture:
+            user.profile_picture.delete(save=False)
+        
+        # Save the processed image
+        filename = f"user_{user.id}_profile.jpg"
+        user.profile_picture.save(
+            filename,
+            ContentFile(output.read()),
+            save=True
+        )
+        
+        return JsonResponse(
+            {
+                "success": True,
+                "message": "Profile picture uploaded successfully",
+                "profile_picture": request.build_absolute_uri(user.profile_picture.url),
+            }
+        )
+        
+    except (IOError, OSError) as e:
+        # Handle Pillow errors (invalid image, corrupt file, etc.)
+        return JsonResponse(
+            {"error": "Invalid or corrupt image file"}, status=400
+        )
+    except Exception as e:
+        return JsonResponse(
+            {"error": f"Failed to process image: {str(e)}"}, status=500
+        )
 
 
 """
