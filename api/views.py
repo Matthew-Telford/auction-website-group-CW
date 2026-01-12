@@ -1530,4 +1530,3 @@ def delete_message(request, message_id):
         return JsonResponse(
             {"error": f"Failed to delete message: {str(e)}"}, status=500
         )
-
