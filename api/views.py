@@ -11,6 +11,7 @@ import re
 import io
 from datetime import date
 from PIL import Image
+from django.views.decorators.http import require_POST
 
 
 @ensure_csrf_cookie
@@ -1568,4 +1569,44 @@ def delete_message(request, message_id):
     except Exception as e:
         return JsonResponse(
             {"error": f"Failed to delete message: {str(e)}"}, status=500
+        )
+
+
+@login_required
+@require_POST
+def create_item(request):
+    try:
+        title = request.POST.get('title')
+        description = request.POST.get('description')
+        starting_price = request.POST.get('starting_price')
+        end_datetime = request.POST.get('end_datetime')
+        image = request.FILES.get('image')
+
+        if not all([title, description, starting_price, end_datetime, image]):
+            return JsonResponse(
+                {'error': 'Missing required fields'},
+                status=400
+            )
+
+        item = Item.objects.create(
+            owner=request.user,
+            title=title,
+            description=description,
+            starting_price=starting_price,
+            end_datetime=parse_datetime(end_datetime),
+            image=image
+        )
+
+        return JsonResponse(
+            {
+                'message': 'Auction created successfully',
+                'item_id': item.id
+            },
+            status=201
+        )
+
+    except Exception as e:
+        return JsonResponse(
+            {'error': str(e)},
+            status=400
         )

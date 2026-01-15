@@ -22,6 +22,7 @@ const router = createRouter({
     { path: "/other/", name: "Other Page", component: OtherPage },
     { path: "/login", name: "LoginPage", component: LoginPage },
     { path: "/signup", name: "SignupPage", component: SignupPage },
+    { path: '/create-auction', name: 'CreateAuction', component: () => import('@/views/AuctionCreate.vue'),meta: { requiresAuth: true }},
   ],
 });
 
