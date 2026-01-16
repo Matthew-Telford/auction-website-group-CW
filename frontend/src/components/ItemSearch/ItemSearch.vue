@@ -51,8 +51,7 @@ const handleSearch = async () => {
 const handleSearchEnter = () => {};
 
 const handleItemClick = (itemID: string) => {
-  console.log("Clicked item ID:", itemID); // NOTE: Remove once Item page is created and add proper redirect
-  //router.push()
+  router.push(`itemDetailsPage/${itemID}`);
 };
 </script>
 

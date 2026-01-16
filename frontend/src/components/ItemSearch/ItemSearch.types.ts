@@ -6,6 +6,7 @@ export type Item = {
   current_bid: number;
   auction_end_date: Date;
   created_at: Date;
+  item_image: string;
 };
 
 export type SearchItem = {

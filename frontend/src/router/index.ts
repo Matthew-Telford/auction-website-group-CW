@@ -8,6 +8,7 @@ import MainPage from "../pages/MainPage.vue";
 import OtherPage from "../pages/OtherPage.vue";
 import LoginPage from "@/pages/LoginPage/LoginPage.vue";
 import SignupPage from "@/pages/SignupPage/SignupPage.vue";
+import ItemDetailsPage from "@/pages/ItemDetailsPage/ItemDetailsPage.vue";
 
 let base =
   import.meta.env.MODE == "development" ? import.meta.env.BASE_URL : "";
@@ -22,6 +23,11 @@ const router = createRouter({
     { path: "/other/", name: "Other Page", component: OtherPage },
     { path: "/login", name: "LoginPage", component: LoginPage },
     { path: "/signup", name: "SignupPage", component: SignupPage },
+    {
+      path: "/itemDetailsPage/:id",
+      name: "ItemDetailsPage",
+      component: ItemDetailsPage,
+    },
   ],
 });
 

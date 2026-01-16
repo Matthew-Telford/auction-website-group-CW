@@ -554,6 +554,12 @@ def get_paginated_items(request):
         else:
             item_data["item_image"] = None
 
+        # Add highest bid
+        highest_bid = Bid.objects.filter(item=item).aggregate(Max("bid_amount"))[
+            "bid_amount__max"
+        ]
+        item_data["highest_bid"] = highest_bid
+
         items_data.append(item_data)
 
     return JsonResponse(
@@ -564,6 +570,71 @@ def get_paginated_items(request):
             "total_count": total_count,
         }
     )
+
+
+"""
+Example fetch request for get item by id
+------------------------------------------------
+    await fetch("http://localhost:8000/items/123/", {
+        method: "GET",
+    });
+
+"""
+
+
+def get_item_by_id(request, item_id):
+    """Get a single item by its ID with full details including highest bid"""
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        item = Item.objects.get(id=item_id)
+    except Item.DoesNotExist:
+        return JsonResponse({"error": "Item not found"}, status=404)
+
+    today = date.today()
+
+    item_data = {
+        "id": item.id,
+        "title": item.title,
+        "description": item.description,
+        "minimum_bid": item.minimum_bid,
+        "auction_end_date": str(item.auction_end_date),
+        "created_at": item.created_at.isoformat(),
+        "is_active": item.auction_end_date >= today,
+    }
+
+    if item.owner:
+        item_data["owner"] = {
+            "id": item.owner.id,
+            "name": f"{item.owner.first_name} {item.owner.last_name}",
+            "email": item.owner.email,
+        }
+    else:
+        item_data["owner"] = None
+
+    if item.auction_winner:
+        item_data["auction_winner"] = {
+            "id": item.auction_winner.id,
+            "name": f"{item.auction_winner.first_name} {item.auction_winner.last_name}",
+        }
+    else:
+        item_data["auction_winner"] = None
+
+    if item.item_image:
+        item_data["item_image"] = request.build_absolute_uri(item.item_image.url)
+    else:
+        item_data["item_image"] = None
+
+    highest_bid = Bid.objects.filter(item=item).aggregate(Max("bid_amount"))[
+        "bid_amount__max"
+    ]
+    item_data["highest_bid"] = highest_bid
+
+    bid_count = Bid.objects.filter(item=item).count()
+    item_data["bid_count"] = bid_count
+
+    return JsonResponse({"success": True, "item": item_data})
 
 
 """
