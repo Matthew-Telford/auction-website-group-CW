@@ -888,6 +888,12 @@ def update_item(request, item_id):
             {"error": "You don't have permission to edit this item"}, status=403
         )
 
+    # Check if auction has already ended
+    if item.auction_end_date < date.today():
+        return JsonResponse(
+            {"error": "Cannot update item - auction has already ended"}, status=400
+        )
+
     # Check if this is a FormData request (with file) or JSON request
     is_formdata = request.method == "POST" or (request.content_type and 'multipart/form-data' in request.content_type)
     
@@ -915,6 +921,13 @@ def update_item(request, item_id):
         item.description = data["description"].strip()
 
     if "minimum_bid" in data:
+        # Check if there are any bids on this item
+        existing_bids = Bid.objects.filter(item=item).exists()
+        if existing_bids:
+            return JsonResponse(
+                {"error": "Cannot update minimum bid - item already has bids"}, status=400
+            )
+        
         try:
             minimum_bid = int(data["minimum_bid"])
             if minimum_bid <= 0:
