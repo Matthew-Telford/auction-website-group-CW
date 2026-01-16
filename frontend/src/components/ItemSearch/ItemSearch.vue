@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useRouter } from "vue-router";
 import { ref } from "vue";
-import { SearchItem, SearchItems, Item } from "./ItemSearch.types";
+import { SearchItems, Item } from "./ItemSearch.types";
 import {
   Command,
   CommandEmpty,
@@ -9,11 +9,8 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-  CommandSeparator,
-  CommandShortcut,
 } from "@/components/ui/command";
-import { Button } from "../ui/button";
-import { ShoppingCart, CornerDownLeft } from "lucide-vue-next";
+import { CornerDownLeft } from "lucide-vue-next";
 
 const router = useRouter();
 
