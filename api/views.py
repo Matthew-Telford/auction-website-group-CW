@@ -148,45 +148,43 @@ def upload_profile_picture(request):
     try:
         # Open and verify the image using Pillow
         image = Image.open(profile_picture)
-        
+
         # Verify it's actually an image (this will raise an exception if not)
         image.verify()
-        
+
         # Re-open the image after verify() (verify() closes the file)
         profile_picture.seek(0)
         image = Image.open(profile_picture)
-        
+
         # Convert RGBA to RGB if necessary (for JPEG compatibility)
-        if image.mode in ('RGBA', 'LA', 'P'):
-            background = Image.new('RGB', image.size, (255, 255, 255))
-            if image.mode == 'P':
-                image = image.convert('RGBA')
-            background.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
+        if image.mode in ("RGBA", "LA", "P"):
+            background = Image.new("RGB", image.size, (255, 255, 255))
+            if image.mode == "P":
+                image = image.convert("RGBA")
+            background.paste(
+                image, mask=image.split()[-1] if image.mode == "RGBA" else None
+            )
             image = background
-        
+
         # Resize if image is too large (optional but recommended)
         max_dimension = 1024  # Max width or height
         if image.width > max_dimension or image.height > max_dimension:
             image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
-        
+
         # Save the processed image to a BytesIO buffer
         output = io.BytesIO()
-        image_format = 'JPEG'  # Standardize to JPEG
+        image_format = "JPEG"  # Standardize to JPEG
         image.save(output, format=image_format, quality=85, optimize=True)
         output.seek(0)
-        
+
         # Delete old profile picture if exists
         if user.profile_picture:
             user.profile_picture.delete(save=False)
-        
+
         # Save the processed image
         filename = f"user_{user.id}_profile.jpg"
-        user.profile_picture.save(
-            filename,
-            ContentFile(output.read()),
-            save=True
-        )
-        
+        user.profile_picture.save(filename, ContentFile(output.read()), save=True)
+
         return JsonResponse(
             {
                 "success": True,
@@ -194,16 +192,12 @@ def upload_profile_picture(request):
                 "profile_picture": request.build_absolute_uri(user.profile_picture.url),
             }
         )
-        
+
     except (IOError, OSError) as e:
         # Handle Pillow errors (invalid image, corrupt file, etc.)
-        return JsonResponse(
-            {"error": "Invalid or corrupt image file"}, status=400
-        )
+        return JsonResponse({"error": "Invalid or corrupt image file"}, status=400)
     except Exception as e:
-        return JsonResponse(
-            {"error": f"Failed to process image: {str(e)}"}, status=500
-        )
+        return JsonResponse({"error": f"Failed to process image: {str(e)}"}, status=500)
 
 
 """
@@ -397,6 +391,9 @@ def get_paginated_items(request):
         # Default ordering by creation date (newest first)
         items = items.order_by("-created_at")
 
+    # Get total count before applying pagination
+    total_count = items.count()
+
     # Apply pagination if both start and end are provided
     if start is not None and end is not None:
         try:
@@ -455,7 +452,12 @@ def get_paginated_items(request):
         items_data.append(item_data)
 
     return JsonResponse(
-        {"success": True, "items": items_data, "count": len(items_data)}
+        {
+            "success": True,
+            "items": items_data,
+            "count": len(items_data),
+            "total_count": total_count,
+        }
     )
 
 
