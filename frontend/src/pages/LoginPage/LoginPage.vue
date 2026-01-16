@@ -38,15 +38,16 @@ const handleLogin = async (email: string, password: string) => {
       openErrorPopup();
     } else if (user.value.success) {
       console.log("Login successful:", user.value);
-      
+
       // Save user data to store
       userStore.setUser(user.value.user);
-      
+
       toast("Success", {
         description: "Login successful! Redirecting...",
       });
-      
-      const redirectTo = (router.currentRoute.value.query.redirect as string) || "/";
+
+      const redirectTo =
+        (router.currentRoute.value.query.redirect as string) || "/";
       setTimeout(() => {
         router.push(redirectTo);
       }, 1500);

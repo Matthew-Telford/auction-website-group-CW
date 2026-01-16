@@ -27,6 +27,10 @@ const goSignup = () => {
   router.push({ path: "/signup", query: { redirect: currentPath } });
 };
 
+const goHome = () => {
+  router.push("/");
+};
+
 onMounted(async () => {
   // Fetch CSRF token on app mount
   await fetch("http://localhost:8000/", {
@@ -40,28 +44,38 @@ onMounted(async () => {
 
 <template>
   <Toaster position="top-center" class="z-[100]" />
-  <MainLogo class="fixed top-6 left-5 z-50 w-1/8" />
-  
+  <button
+    @click="goHome"
+    class="fixed top-6 left-5 z-50 w-1/8 cursor-pointer hover:opacity-80 transition-opacity"
+  >
+    <MainLogo class="w-full" />
+  </button>
+
   <!-- Persistent Auth/Profile Buttons -->
   <div v-if="showAuthButtons" class="fixed top-6 right-5 z-50 flex gap-3">
     <template v-if="!userStore.isLoggedIn">
-      <Button class="h-8 bg-zinc-100 shadow-sm" @click="goLogin">Login</Button>
-      <Button class="h-8 bg-zinc-100 shadow-sm" @click="goSignup">Signup</Button>
+      <Button variant="outline" class="h-8 shadow-sm" @click="goLogin"
+        >Login</Button
+      >
+      <Button variant="outline" class="h-8 shadow-sm" @click="goSignup"
+        >Signup</Button
+      >
     </template>
     <template v-else>
-      <button class="flex items-center gap-2 h-8 pl-3 pr-2 hover:opacity-80 transition-opacity">
+      <button
+        class="flex items-center gap-2 h-8 pl-3 pr-2 hover:opacity-80 transition-opacity"
+      >
         <span class="text-sm font-medium">Profile</span>
-        <div class="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 bg-muted">
+        <div
+          class="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 bg-muted"
+        >
           <img
-            v-if="userStore.user?.profile_picture"
-            :src="userStore.user.profile_picture"
-            :alt="`${userStore.user.first_name} ${userStore.user.last_name}`"
+            v-if="userStore.user.value?.profile_picture"
+            :src="userStore.user.value?.profile_picture"
+            :alt="`${userStore.user.value?.first_name} ${userStore.user.value?.last_name}`"
             class="w-full h-full object-cover"
           />
-          <div
-            v-else
-            class="w-full h-full flex items-center justify-center"
-          >
+          <div v-else class="w-full h-full flex items-center justify-center">
             <User class="w-4 h-4 text-muted-foreground" />
           </div>
         </div>
