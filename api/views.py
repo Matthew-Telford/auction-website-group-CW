@@ -642,6 +642,7 @@ def get_item_by_id(request, item_id):
 """
 Example fetch request for create item
 ------------------------------------------------
+    // Without image
     await fetch("http://localhost:8000/items/create/", {
         method: "POST",
         headers: {
@@ -657,24 +658,51 @@ Example fetch request for create item
         }),
     });
 
+    // With image
+    const formData = new FormData();
+    formData.append("title", "Vintage Watch");
+    formData.append("description", "Beautiful vintage watch in great condition");
+    formData.append("minimum_bid", "100");
+    formData.append("auction_end_date", "2026-02-15");
+    formData.append("item_image", fileInput.files[0]);
+    
+    await fetch("http://localhost:8000/items/create/", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+    });
+
 """
 
 
 @login_required
+@csrf_exempt
 def create_item(request):
-    """Create a new auction item"""
+    """Create a new auction item with optional image"""
     if request.method != "POST":
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
-    # Handle JSON body
-    try:
-        data = json.loads(request.body)
-        title = data.get("title")
-        description = data.get("description")
-        minimum_bid = data.get("minimum_bid")
-        auction_end_date = data.get("auction_end_date")
-    except (json.JSONDecodeError, ValueError):
-        return JsonResponse({"error": "Invalid JSON data"}, status=400)
+    # Check if this is a FormData request (with file) or JSON request
+    is_formdata = request.content_type and 'multipart/form-data' in request.content_type
+    
+    if is_formdata:
+        # Handle FormData (with potential file upload)
+        title = request.POST.get("title")
+        description = request.POST.get("description")
+        minimum_bid = request.POST.get("minimum_bid")
+        auction_end_date = request.POST.get("auction_end_date")
+        item_image = request.FILES.get("item_image")
+    else:
+        # Handle JSON body
+        try:
+            data = json.loads(request.body)
+            title = data.get("title")
+            description = data.get("description")
+            minimum_bid = data.get("minimum_bid")
+            auction_end_date = data.get("auction_end_date")
+            item_image = None
+        except (json.JSONDecodeError, ValueError):
+            return JsonResponse({"error": "Invalid JSON data"}, status=400)
 
     # Validate required fields (checking for None explicitly to allow 0 values)
     if (
@@ -729,6 +757,61 @@ def create_item(request):
             auction_end_date=auction_end_date_obj,
         )
 
+        # Process and save item image if provided
+        if item_image:
+            # Validate file size (max 5MB)
+            max_size = 5 * 1024 * 1024
+            if item_image.size > max_size:
+                item.delete()
+                return JsonResponse(
+                    {"error": "File too large. Maximum size is 5MB"}, status=400
+                )
+
+            try:
+                # Open and verify the image
+                image = Image.open(item_image)
+                image.verify()
+
+                # Re-open after verify
+                item_image.seek(0)
+                image = Image.open(item_image)
+
+                # Convert RGBA to RGB if necessary
+                if image.mode in ("RGBA", "LA", "P"):
+                    background = Image.new("RGB", image.size, (255, 255, 255))
+                    if image.mode == "P":
+                        image = image.convert("RGBA")
+                    background.paste(
+                        image, mask=image.split()[-1] if image.mode == "RGBA" else None
+                    )
+                    image = background
+
+                # Resize if too large
+                max_dimension = 1024
+                if image.width > max_dimension or image.height > max_dimension:
+                    image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+
+                # Save to buffer
+                output = io.BytesIO()
+                image_format = "JPEG"
+                image.save(output, format=image_format, quality=85, optimize=True)
+                output.seek(0)
+
+                # Save to item
+                filename = f"item_{item.id}.jpg"
+                item.item_image.save(filename, ContentFile(output.read()), save=True)
+
+            except (IOError, OSError):
+                item.delete()
+                return JsonResponse(
+                    {"error": "Invalid or corrupt image file"}, status=400
+                )
+            except Exception as e:
+                item.delete()
+                return JsonResponse(
+                    {"error": f"Failed to process image: {str(e)}"}, status=500
+                )
+
         # Return item data
         item_data = {
             "id": item.id,
@@ -742,6 +825,9 @@ def create_item(request):
                 "name": f"{request.user.first_name} {request.user.last_name}",
                 "email": request.user.email,
             },
+            "item_image": request.build_absolute_uri(item.item_image.url)
+            if item.item_image
+            else None,
         }
 
         return JsonResponse(
@@ -754,6 +840,13 @@ def create_item(request):
 """
 Example fetch request for update item
 ------------------------------------------------
+    IMPORTANT VALIDATION RULES:
+    - Can only update items where the auction hasn't ended yet
+    - Can update: title, description, image, auction_end_date
+    - Can ONLY update minimum_bid if the item has NO bids yet
+    - Must be item owner or admin
+
+    // Without image (JSON)
     await fetch("http://localhost:8000/items/123/update/", {
         method: "PUT",
         headers: {
@@ -763,8 +856,24 @@ Example fetch request for update item
         credentials: "include",
         body: JSON.stringify({
             title: "Updated Title",
-            minimum_bid: 150
+            description: "Updated description",
+            minimum_bid: 150  // Only if no bids exist!
         }),
+    });
+
+    // With image (FormData) - Note: must use POST when sending FormData with files
+    const formData = new FormData();
+    formData.append("_method", "PUT");
+    formData.append("title", "Updated Title");
+    formData.append("description", "Updated description");
+    formData.append("minimum_bid", "150");  // Only if no bids exist!
+    formData.append("auction_end_date", "2026-03-15");
+    formData.append("item_image", fileInput.files[0]);
+    
+    await fetch("http://localhost:8000/items/123/update/", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
     });
 
 """
@@ -773,8 +882,9 @@ Example fetch request for update item
 @login_required
 @csrf_exempt
 def update_item(request, item_id):
-    """Update an existing auction item (owner or admin only)"""
-    if request.method != "PUT":
+    """Update an existing auction item with optional image (owner or admin only)"""
+    # Allow both PUT and POST (POST is needed for file uploads)
+    if request.method not in ["PUT", "POST"]:
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
     # Get the item
@@ -789,20 +899,46 @@ def update_item(request, item_id):
             {"error": "You don't have permission to edit this item"}, status=403
         )
 
-    # Handle JSON body
-    try:
-        data = json.loads(request.body)
-    except (json.JSONDecodeError, ValueError):
-        return JsonResponse({"error": "Invalid JSON data"}, status=400)
+    # Check if auction has already ended
+    if item.auction_end_date < date.today():
+        return JsonResponse(
+            {"error": "Cannot update item - auction has already ended"}, status=400
+        )
+
+    # Check if this is a FormData request (with file) or JSON request
+    is_formdata = request.method == "POST" or (request.content_type and 'multipart/form-data' in request.content_type)
+    
+    if is_formdata:
+        # Handle FormData
+        data = request.POST.dict()
+        item_image = request.FILES.get("item_image")
+    else:
+        # Handle JSON body
+        try:
+            data = json.loads(request.body)
+            item_image = None
+        except (json.JSONDecodeError, ValueError):
+            return JsonResponse({"error": "Invalid JSON data"}, status=400)
 
     # Update fields if provided
     if "title" in data:
-        item.title = data["title"]
+        if not data["title"] or not data["title"].strip():
+            return JsonResponse({"error": "Title cannot be empty"}, status=400)
+        item.title = data["title"].strip()
 
     if "description" in data:
-        item.description = data["description"]
+        if not data["description"] or not data["description"].strip():
+            return JsonResponse({"error": "Description cannot be empty"}, status=400)
+        item.description = data["description"].strip()
 
     if "minimum_bid" in data:
+        # Check if there are any bids on this item
+        existing_bids = Bid.objects.filter(item=item).exists()
+        if existing_bids:
+            return JsonResponse(
+                {"error": "Cannot update minimum bid - item already has bids"}, status=400
+            )
+        
         try:
             minimum_bid = int(data["minimum_bid"])
             if minimum_bid <= 0:
@@ -826,6 +962,62 @@ def update_item(request, item_id):
                 {"error": "Invalid date format. Use YYYY-MM-DD"}, status=400
             )
 
+    # Process and update item image if provided
+    if item_image:
+        # Validate file size (max 5MB)
+        max_size = 5 * 1024 * 1024
+        if item_image.size > max_size:
+            return JsonResponse(
+                {"error": "File too large. Maximum size is 5MB"}, status=400
+            )
+
+        try:
+            # Open and verify the image
+            image = Image.open(item_image)
+            image.verify()
+
+            # Re-open after verify
+            item_image.seek(0)
+            image = Image.open(item_image)
+
+            # Convert RGBA to RGB if necessary
+            if image.mode in ("RGBA", "LA", "P"):
+                background = Image.new("RGB", image.size, (255, 255, 255))
+                if image.mode == "P":
+                    image = image.convert("RGBA")
+                background.paste(
+                    image, mask=image.split()[-1] if image.mode == "RGBA" else None
+                )
+                image = background
+
+            # Resize if too large
+            max_dimension = 1024
+            if image.width > max_dimension or image.height > max_dimension:
+                image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+
+            # Save to buffer
+            output = io.BytesIO()
+            image_format = "JPEG"
+            image.save(output, format=image_format, quality=85, optimize=True)
+            output.seek(0)
+
+            # Delete old image if exists
+            if item.item_image:
+                item.item_image.delete(save=False)
+
+            # Save new image
+            filename = f"item_{item.id}.jpg"
+            item.item_image.save(filename, ContentFile(output.read()), save=False)
+
+        except (IOError, OSError):
+            return JsonResponse(
+                {"error": "Invalid or corrupt image file"}, status=400
+            )
+        except Exception as e:
+            return JsonResponse(
+                {"error": f"Failed to process image: {str(e)}"}, status=500
+            )
+
     try:
         item.save()
 
@@ -837,6 +1029,9 @@ def update_item(request, item_id):
             "minimum_bid": item.minimum_bid,
             "auction_end_date": str(item.auction_end_date),
             "created_at": item.created_at.isoformat(),
+            "item_image": request.build_absolute_uri(item.item_image.url)
+            if item.item_image
+            else None,
         }
 
         if item.owner:

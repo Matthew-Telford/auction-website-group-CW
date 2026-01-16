@@ -2,7 +2,9 @@
 import { onMounted, ref, computed } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import PlaceBidModal from "@/components/PlaceBidModal/PlaceBidModal.vue";
+import MessageModal from "@/components/MessageModal/MessageModal.vue";
 import { Button } from "@/components/ui/button";
+import { calculateDaysAgo } from "@/utils/date";
 import {
   Card,
   CardContent,
@@ -30,18 +32,16 @@ import {
 const route = useRoute();
 const router = useRouter();
 
-const itemID = route.params.id;
+const itemID = Array.isArray(route.params.id) ? route.params.id[0] : route.params.id;
 const item = ref<any>(); //NOTE: Add type of item I'm just lazy rn
 const itemBidHistory = ref<any>(); //NOTE: Add typpe when I'm not a lazy peice of shit
+const itemMessages = ref<any>();
 const placeBidModalRef = ref();
+const messageModalRef = ref();
 
 const daysAgo = computed(() => {
   if (!item.value?.created_at) return 0;
-  const createdDate = new Date(item.value.created_at);
-  const today = new Date();
-  const diffTime = Math.abs(today.getTime() - createdDate.getTime());
-  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-  return diffDays;
+  return calculateDaysAgo(item.value.created_at);
 });
 
 const formattedEndDate = computed(() => {
@@ -108,9 +108,44 @@ const getItemBids = async () => {
   }
 };
 
+const getItemMessages = async () => {
+  try {
+    const fetchResults = await fetch(
+      `http://localhost:8000/items/${itemID}/messages/`,
+      {
+        method: "GET",
+        credentials: "include",
+      },
+    );
+
+    if (!fetchResults.ok) {
+      const errorData = await fetchResults.json().catch(() => ({}));
+      const errorMessage = errorData.error || `Failed to fetch messages: ${fetchResults.status} ${fetchResults.statusText}`;
+      console.error("Error fetching item messages:", errorMessage);
+      return;
+    }
+
+    const messagesResults = await fetchResults.json();
+
+    if (messagesResults.success) {
+      itemMessages.value = messagesResults.messages;
+    } else {
+      console.error("Error fetching item messages:", messagesResults.error || "Unknown error");
+    }
+  } catch (err) {
+    console.error("Error fetching item messages:", err);
+  }
+};
+
 const openBidModal = () => {
   if (placeBidModalRef.value) {
     placeBidModalRef.value.isOpen = true;
+  }
+};
+
+const openMessageModal = () => {
+  if (messageModalRef.value) {
+    messageModalRef.value.isOpen = true;
   }
 };
 
@@ -122,6 +157,7 @@ const handleBidPlaced = async () => {
 onMounted(async () => {
   await getItemDetails();
   await getItemBids();
+  await getItemMessages();
 });
 </script>
 
@@ -147,6 +183,7 @@ onMounted(async () => {
             <TooltipTrigger as-child>
               <button
                 class="absolute top-4 right-4 z-10 p-2 hover:bg-muted rounded-md transition-colors"
+                @click="openMessageModal"
               >
                 <Send class="w-5 h-5" />
               </button>
@@ -181,13 +218,13 @@ onMounted(async () => {
           <div class="flex-1 flex flex-col">
             <CardHeader>
               <CardTitle class="text-3xl">{{ item.title }}</CardTitle>
-              <CardDescription>
+              <CardDescription class="mb-4">
                 Listed {{ daysAgo }} {{ daysAgo === 1 ? "day" : "days" }} ago
               </CardDescription>
             </CardHeader>
 
-            <CardContent class="flex-1 flex flex-col justify-between space-y-6">
-              <div class="space-y-4">
+            <CardContent class="flex-1 flex flex-col space-y-0">
+              <div class="space-y-2">
                 <!-- Description -->
                 <div>
                   <p class="text-sm text-muted-foreground mb-1">Description</p>
@@ -218,7 +255,7 @@ onMounted(async () => {
               </div>
 
               <!-- Place Bid Button -->
-              <div class="space-y-2">
+              <div class="space-y-2 mt-auto">
                 <p
                   v-if="!item.is_active"
                   class="text-center text-sm font-semibold text-destructive"
@@ -239,7 +276,7 @@ onMounted(async () => {
         </div>
       </Card>
 
-      <!-- Hidden Modal -->
+      <!-- Hidden Modals -->
       <PlaceBidModal
         v-if="item"
         ref="placeBidModalRef"
@@ -249,6 +286,15 @@ onMounted(async () => {
         :auction-end-time="item.auction_end_date"
         :bidHistory="itemBidHistory"
         @bid-placed="handleBidPlaced"
+      />
+
+      <MessageModal
+        v-if="item"
+        ref="messageModalRef"
+        :item-id="itemID"
+        :item-title="item.title"
+        :messages="itemMessages"
+        @messages-updated="getItemMessages"
       />
     </div>
   </div>
