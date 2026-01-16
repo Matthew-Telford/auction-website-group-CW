@@ -4,6 +4,7 @@ import ItemSearch from "@/components/ItemSearch/ItemSearch.vue";
 import ItemDisplay from "@/components/ItemDisplay/ItemDisplay.vue";
 import { Item } from "@/components/ItemSearch/ItemSearch.types";
 import { DisplayItem } from "@/components/ItemDisplay/ItemDisplay.types";
+import { calculateVisiblePages } from "@/utils/pagination";
 import {
   Pagination,
   PaginationContent,
@@ -21,6 +22,16 @@ const itemsPerPage = 15;
 const totalPages = computed(() => {
   return Math.ceil(totalItems.value / itemsPerPage);
 });
+
+const paginationData = computed(() => {
+  return calculateVisiblePages({
+    currentPage: pageNumber.value,
+    totalPages: totalPages.value,
+  });
+});
+
+const visiblePageNumbers = computed(() => paginationData.value.visiblePageNumbers);
+const showRightEllipsis = computed(() => paginationData.value.showRightEllipsis);
 
 const handleGetItems = async () => {
   const start = (pageNumber.value - 1) * itemsPerPage;
@@ -91,13 +102,13 @@ onMounted(async () => {
         <PaginationContent>
           <PaginationPrevious />
           <PaginationItem
-            v-for="pageNum in totalPages"
+            v-for="pageNum in visiblePageNumbers"
             :key="pageNum"
             size="icon-sm"
             :value="pageNum"
             :is-active="pageNum === pageNumber"
           ></PaginationItem>
-          <PaginationEllipsis v-if="totalPages > 3" :index="3" />
+          <PaginationEllipsis v-if="showRightEllipsis" />
           <PaginationNext />
         </PaginationContent>
       </Pagination>

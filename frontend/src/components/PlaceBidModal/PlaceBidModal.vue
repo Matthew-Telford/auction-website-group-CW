@@ -17,13 +17,14 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getCSRFToken } from "@/utils/csrf";
+import { calculateCountdown, formatTime, type CountdownTime } from "@/utils/countdown";
 
-interface Bid {
+type Bid = {
   id: number;
   amount: number;
   bidder: string;
   timestamp: string;
-}
+};
 
 const props = defineProps<{
   itemID: string;
@@ -39,7 +40,7 @@ const emit = defineEmits<{
 
 const userBid = ref<number>();
 const isOpen = ref(false);
-const countdown = ref({
+const countdown = ref<CountdownTime>({
   days: 0,
   hours: 0,
   minutes: 0,
@@ -48,33 +49,21 @@ const countdown = ref({
 
 let countdownInterval: number | null = null;
 
-const calculateCountdown = () => {
-  const now = new Date().getTime();
-  const endTime = new Date(props.auctionEndTime).getTime();
-  const timeRemaining = endTime - now;
-
-  if (timeRemaining <= 0) {
-    countdown.value = { days: 0, hours: 0, minutes: 0, seconds: 0 };
+const updateCountdown = () => {
+  countdown.value = calculateCountdown(props.auctionEndTime);
+  
+  if (countdown.value.days === 0 && countdown.value.hours === 0 && 
+      countdown.value.minutes === 0 && countdown.value.seconds === 0) {
     if (countdownInterval) {
       clearInterval(countdownInterval);
       countdownInterval = null;
     }
-    return;
   }
-
-  const days = Math.floor(timeRemaining / (1000 * 60 * 60 * 24));
-  const hours = Math.floor(
-    (timeRemaining % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
-  );
-  const minutes = Math.floor((timeRemaining % (1000 * 60 * 60)) / (1000 * 60));
-  const seconds = Math.floor((timeRemaining % (1000 * 60)) / 1000);
-
-  countdown.value = { days, hours, minutes, seconds };
 };
 
 const startCountdown = () => {
-  calculateCountdown();
-  countdownInterval = window.setInterval(calculateCountdown, 1000);
+  updateCountdown();
+  countdownInterval = window.setInterval(updateCountdown, 1000);
 };
 
 const stopCountdown = () => {
@@ -96,8 +85,6 @@ onUnmounted(() => {
   stopCountdown();
 });
 
-const formatTime = (num: number) => String(num).padStart(2, "0");
-
 const handleCloseModal = () => {
   userBid.value = undefined;
   isOpen.value = false;
@@ -116,12 +103,15 @@ const handlePlaceBid = async () => {
 
   const minimumRequiredBid = props.currentHighestBid + 1;
   if (userBid.value < minimumRequiredBid) {
-    toast.error(`Bid must be at least $${minimumRequiredBid.toLocaleString()}`, {
-      action: {
-        label: "Close",
-        onClick: () => {},
+    toast.error(
+      `Bid must be at least $${minimumRequiredBid.toLocaleString()}`,
+      {
+        action: {
+          label: "Close",
+          onClick: () => {},
+        },
       },
-    });
+    );
     return;
   }
 
@@ -175,7 +165,14 @@ defineExpose({
 </script>
 
 <template>
-  <Dialog v-model:open="isOpen" @update:open="(open) => { if (!open) userBid = undefined; }">
+  <Dialog
+    v-model:open="isOpen"
+    @update:open="
+      (open) => {
+        if (!open) userBid = undefined;
+      }
+    "
+  >
     <DialogTrigger as-child>
       <slot />
     </DialogTrigger>
