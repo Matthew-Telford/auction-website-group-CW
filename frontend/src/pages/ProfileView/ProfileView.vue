@@ -2,6 +2,8 @@
   import { ref, onMounted } from "vue";
   import ProfileEditModal from "@/components/ProfileModal/ProfileModal.vue";
   import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+  import { useRouter } from "vue-router";
+  import { Button } from "@/components/ui/button";
 import { getCSRFToken } from "@/utils/csrf";
 import { profile } from "node:console";
   
@@ -65,7 +67,6 @@ import { profile } from "node:console";
       const formData = new FormData();
         // Optionally, log a warning or handle cases where profile_picture is not a valid file
         formData.append("profile_picture", payload.profile_picture);
-        console.warn("No valid profile picture provided or it's not a file/blob object.");
       const res=await fetch("http://localhost:8000/profile/picture/upload/", {
           method: "POST",
           credentials: "include",
@@ -94,6 +95,11 @@ import { profile } from "node:console";
         <CardHeader class="flex flex-row items-center justify-between">
           <CardTitle>My Profile</CardTitle>
           <ProfileEditModal :initial-data="profileData" @save="handleSave" />
+          <Button as-child class="bg-blue-600 hover:bg-blue-700 text-white">
+              <router-link to="/itemUpload">
+                Manage Listings
+              </router-link>
+            </Button>
         </CardHeader>
         
         <CardContent class="space-y-6">

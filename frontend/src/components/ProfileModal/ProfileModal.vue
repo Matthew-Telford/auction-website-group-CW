@@ -100,7 +100,7 @@
               Make changes to your profile here. Click save when you're done.
             </DialogDescription>
           </DialogHeader>
-          
+        
           <form @submit="onSubmit" class="grid gap-4 py-4">
             <div class="flex flex-col items-center gap-4">
               <img 
