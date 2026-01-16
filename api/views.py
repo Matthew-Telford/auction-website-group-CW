@@ -838,6 +838,12 @@ def create_item(request):
 """
 Example fetch request for update item
 ------------------------------------------------
+    IMPORTANT VALIDATION RULES:
+    - Can only update items where the auction hasn't ended yet
+    - Can update: title, description, image, auction_end_date
+    - Can ONLY update minimum_bid if the item has NO bids yet
+    - Must be item owner or admin
+
     // Without image (JSON)
     await fetch("http://localhost:8000/items/123/update/", {
         method: "PUT",
@@ -848,7 +854,8 @@ Example fetch request for update item
         credentials: "include",
         body: JSON.stringify({
             title: "Updated Title",
-            minimum_bid: 150
+            description: "Updated description",
+            minimum_bid: 150  // Only if no bids exist!
         }),
     });
 
@@ -856,7 +863,9 @@ Example fetch request for update item
     const formData = new FormData();
     formData.append("_method", "PUT");
     formData.append("title", "Updated Title");
-    formData.append("minimum_bid", "150");
+    formData.append("description", "Updated description");
+    formData.append("minimum_bid", "150");  // Only if no bids exist!
+    formData.append("auction_end_date", "2026-03-15");
     formData.append("item_image", fileInput.files[0]);
     
     await fetch("http://localhost:8000/items/123/update/", {
