@@ -175,13 +175,15 @@ def upload_profile_picture(request):
         output = io.BytesIO()
         image_format = "JPEG"  # Standardize to JPEG
         image.save(output, format=image_format, quality=85, optimize=True)
+        
+        # IMPORTANT: Seek to the beginning of the buffer before reading
         output.seek(0)
 
         # Delete old profile picture if exists
         if user.profile_picture:
             user.profile_picture.delete(save=False)
-
-        # Save the processed image
+        
+        # Save the processed image with save=True to persist to database
         filename = f"user_{user.id}_profile.jpg"
         user.profile_picture.save(filename, ContentFile(output.read()), save=True)
 
@@ -1942,3 +1944,4 @@ def delete_message(request, message_id):
         return JsonResponse(
             {"error": f"Failed to delete message: {str(e)}"}, status=500
         )
+

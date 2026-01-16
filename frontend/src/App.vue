@@ -27,10 +27,14 @@ const goSignup = () => {
   router.push({ path: "/signup", query: { redirect: currentPath } });
 };
 
+
 const goHome = () => {
   router.push("/");
 };
 
+const goProfile = () => {
+  router.push("/profile");
+}
 onMounted(async () => {
   // Fetch CSRF token on app mount
   await fetch("http://localhost:8000/", {
@@ -62,9 +66,7 @@ onMounted(async () => {
       >
     </template>
     <template v-else>
-      <button
-        class="flex items-center gap-2 h-8 pl-3 pr-2 hover:opacity-80 transition-opacity"
-      >
+      <button class="flex items-center gap-2 h-8 pl-3 pr-2 hover:opacity-80 transition-opacity">
         <span class="text-sm font-medium">Profile</span>
         <div
           class="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 bg-muted"
