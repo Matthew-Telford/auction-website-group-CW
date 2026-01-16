@@ -1,17 +1,20 @@
 <script setup lang="ts">
     import { ref, onMounted } from "vue";
+    import { useRouter } from "vue-router";
     import CreateItemModal from "@/components/AuctionCreate/AuctionCreate.vue";
     import { Card, CardContent, CardFooter } from "@/components/ui/card";
     import { Badge } from "@/components/ui/badge";
     import { Package } from "lucide-vue-next";
 
     interface AuctionItem {
-    id: number;
+    id: string;
     title: string;
     minimum_bid: string;
     auction_end_date: string;
     image: string | null;
     }
+
+    const router = useRouter();
     //Fetching users previous items:
     const myItems = ref<AuctionItem[]>([]);
     const isLoading = ref(true);
@@ -30,12 +33,14 @@
 
             const itemResults = await res.json();
 
+            console.log("item results", itemResults);
+
             myItems.value = itemResults.items.map((item) => ({
                 id: item.id,
                 title: item.title,
                 minimum_bid: item.minimum_bid,
                 auction_end_date: item.auction_end_date,
-                image: item.image,
+                image: item.item_image,
             }))
         } catch (err) {
             console.error("Error fetching user items:", err);
@@ -61,6 +66,10 @@
       // items.value = await res.json();
       console.log("Fetching latest items...");
     };
+
+    const goDetails = (itemID: string) => {
+        router.push(`itemDetailsPage/${itemID}`);
+    }
     onMounted(fetchMyItems);
 </script>
 
@@ -111,14 +120,14 @@
 
         <CardContent class="p-4">
           <h3 class="font-bold text-lg truncate">{{ item.title }}</h3>
-          <p class="text-green-600 font-semibold mt-1">${{ item.starting_price }}</p>
+          <p class="text-green-600 font-semibold mt-1">${{ item.minimum_bid }}</p>
           <p class="text-xs text-gray-500 mt-2">
-            Ends: {{ formatDate(item.end_time) }}
+            Ends: {{ formatDate(item.auction_end_date) }}
           </p>
         </CardContent>
         
         <CardFooter class="p-4 pt-0 flex gap-2">
-             <button class="text-sm font-medium text-blue-600 hover:underline">
+             <button class="text-sm font-medium text-blue-600 hover:underline" @click="goDetails(item.id)">
                 View Details
             </button>
         </CardFooter>

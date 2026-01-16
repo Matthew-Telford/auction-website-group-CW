@@ -50,17 +50,16 @@
       payload.append("description", formData.value.description);
       payload.append("minimum_bid", formData.value.minimum_bid);
       payload.append("auction_end_date", formData.value.auction_end_date);
-      //payload.append("image", selectedFile.value); // Matches Django 'image' key
+      console.log("Selected file:", selectedFile.value);
+      if (selectedFile.value) {
+        payload.append("item_image", selectedFile.value);
+      }
     
       try {
         // 2. Send to Backend
         const csrftoken = getCSRFToken();
-        const res = await fetch("http://localhost:8000/items/create/", {
+        const res =await fetch("http://localhost:8000/items/create/", {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": csrftoken ?? "",
-        },
         credentials: "include",
         body: payload,
         });
@@ -125,13 +124,13 @@
               </div>
               <div class="grid gap-2">
                 <Label htmlFor="date">End Date/Time</Label>
-                <Input id="date" type="datetime-local" v-model="formData.auction_end_date" />
+                <Input id="date" type="date" v-model="formData.auction_end_date" />
               </div>
             </div>
     
             <div class="grid gap-2">
               <Label htmlFor="picture">Item Picture</Label>
-              <Input id="picture" type="file" accept="image/*" @change="onFileChange" />
+              <Input id="picture" type="file" @change="onFileChange" />
             </div>
           </div>
     
