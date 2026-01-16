@@ -28,7 +28,7 @@
     }>();
     
     const emit = defineEmits<{ 
-        (e: "save", payload: { profile_picture: File; email: string }): void;
+        (e: "save", payload: any): void;
     }>()
     const isOpen = ref(false);
     const previewUrl = ref<string | null>(null);
@@ -75,11 +75,13 @@
       }
     };
     
-    const onSubmit = form.handleSubmit(() => {
+    const onSubmit = form.handleSubmit((values) => {
       if (image.value) {
         emit("save", {
-          profile_picture: image.value,
-          email: form.values.email || ""
+          profile_picture: image.value ?? undefined,
+          first_name: values.first_name,
+          last_name: values.last_name,
+          date_of_birth: values.date_of_birth
         });
       }
       isOpen.value = false; // Close modal
@@ -102,7 +104,7 @@
           <form @submit="onSubmit" class="grid gap-4 py-4">
             <div class="flex flex-col items-center gap-4">
               <img 
-                :src="previewUrl || '/placeholder-user.jpg'" 
+                :src="previewUrl || props.initialData.profile_picture" 
                 class="w-24 h-24 rounded-full object-cover border" 
               />
               <div class="grid w-full max-w-sm items-center gap-1.5">
