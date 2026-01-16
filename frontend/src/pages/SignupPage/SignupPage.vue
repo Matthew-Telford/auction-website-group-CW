@@ -5,9 +5,11 @@ import { useRouter } from "vue-router";
 import { ref } from "vue";
 import { toast } from "vue-sonner";
 import type { DateValue } from "@internationalized/date";
+import { useUserStore } from "@/stores/userStore";
 
 const user = ref<any>();
 const router = useRouter();
+const userStore = useUserStore();
 
 type UserSignup = {
   first_name: string;
@@ -59,12 +61,17 @@ const handleSignup = async (signupDetails: UserSignup) => {
       openErrorPopup(result.error);
     } else if (result.success) {
       user.value = result.user;
+      
+      // Save user data to store
+      userStore.setUser(result.user);
+      
       toast("Success", {
         description: "Account created successfully! Redirecting...",
       });
-      // Redirect to main page or dashboard after successful signup
+      
+      const redirectTo = (router.currentRoute.value.query.redirect as string) || "/";
       setTimeout(() => {
-        router.push("/");
+        router.push(redirectTo);
       }, 1500);
     }
     console.log("Signup result:", result);
