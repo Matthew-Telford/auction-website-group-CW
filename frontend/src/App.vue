@@ -66,7 +66,7 @@ onMounted(async () => {
       >
     </template>
     <template v-else>
-      <button class="flex items-center gap-2 h-8 pl-3 pr-2 hover:opacity-80 transition-opacity">
+      <button @click="goProfile" class="flex items-center gap-2 h-8 pl-3 pr-2 hover:opacity-80 transition-opacity">
         <span class="text-sm font-medium">Profile</span>
         <div
           class="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 bg-muted"

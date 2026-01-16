@@ -87,11 +87,16 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="mt-4 pb-20">
+    <div v-if="items && items.length > 0" class="mt-4 pb-20">
       <ItemDisplay :items="items" />
     </div>
 
-    <div class="fixed bottom-0 left-0 right-0 py-4 flex justify-center">
+    <div v-else class="flex flex-col items-center justify-center min-h-[60vh]">
+      <h2 class="text-3xl font-semibold text-gray-700 mb-2">No Items Listed</h2>
+      <p class="text-lg text-gray-500">Be the first to list an item!</p>
+    </div>
+
+    <div v-if="items && items.length > 0" class="fixed bottom-0 left-0 right-0 py-4 flex justify-center">
       <Pagination
         v-slot="{ page }"
         v-model:page="pageNumber"
