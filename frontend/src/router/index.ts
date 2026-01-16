@@ -9,6 +9,7 @@ import OtherPage from "../pages/OtherPage.vue";
 import LoginPage from "@/pages/LoginPage/LoginPage.vue";
 import SignupPage from "@/pages/SignupPage/SignupPage.vue";
 import ProfileView from "@/pages/ProfileView/ProfileView.vue";
+import ItemDetailsPage from "@/pages/ItemDetailsPage/ItemDetailsPage.vue";
 
 let base =
   import.meta.env.MODE == "development" ? import.meta.env.BASE_URL : "";
@@ -24,6 +25,11 @@ const router = createRouter({
     { path: "/login", name: "LoginPage", component: LoginPage },
     { path: "/signup", name: "SignupPage", component: SignupPage },
     { path: "/profile",name: "Profile Page", component:ProfileView},
+    {
+      path: "/itemDetailsPage/:id",
+      name: "ItemDetailsPage",
+      component: ItemDetailsPage,
+    },
   ],
 });
 

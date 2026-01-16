@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Card, CardContent } from "@/components/ui/card";
 import { DisplayItem } from "../ItemDisplay.types";
-
+import { ImageIcon } from "lucide-vue-next";
 import { useRouter } from "vue-router";
 
 const props = defineProps<{
@@ -11,7 +11,7 @@ const props = defineProps<{
 const router = useRouter();
 
 const handleCardClick = () => {
-  // TODO: Add navigation logic here
+  router.push(`itemDetailsPage/${props.item.id}`);
 };
 </script>
 
@@ -24,16 +24,16 @@ const handleCardClick = () => {
       <div class="flex gap-3 h-[100px]">
         <div class="flex-shrink-0">
           <img
-            v-if="props.item.item_image"
-            :src="props.item.item_image"
+            v-if="props.item.image"
+            :src="props.item.image"
             :alt="props.item.title"
             class="w-24 h-24 object-cover rounded-lg"
           />
           <div
             v-else
-            class="w-24 h-24 bg-muted rounded-lg flex items-center justify-center text-muted-foreground text-xs"
+            class="w-24 h-24 bg-muted rounded-lg flex items-center justify-center"
           >
-            No Image
+            <ImageIcon class="w-8 h-8 text-muted-foreground" />
           </div>
         </div>
 

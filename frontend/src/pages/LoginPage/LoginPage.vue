@@ -4,9 +4,11 @@ import { useRouter } from "vue-router";
 import { ref } from "vue";
 import { toast } from "vue-sonner";
 import LoginModal from "@/components/LoginModal/LoginModal.vue";
+import { useUserStore } from "@/stores/userStore";
 
 const user = ref<any>();
 const router = useRouter();
+const userStore = useUserStore();
 
 const login = async (email: string, password: string): Promise<JSON> => {
   const csrfToken = getCSRFToken();
@@ -34,8 +36,21 @@ const handleLogin = async (email: string, password: string) => {
 
     if (user.value.error) {
       openErrorPopup();
+    } else if (user.value.success) {
+      console.log("Login successful:", user.value);
+      
+      // Save user data to store
+      userStore.setUser(user.value.user);
+      
+      toast("Success", {
+        description: "Login successful! Redirecting...",
+      });
+      
+      const redirectTo = (router.currentRoute.value.query.redirect as string) || "/";
+      setTimeout(() => {
+        router.push(redirectTo);
+      }, 1500);
     }
-    console.log("Login successful:", user.value);
   } catch (err) {
     console.error("Error while logging in:", err);
   }
