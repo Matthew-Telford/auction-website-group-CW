@@ -1,4 +1,5 @@
 export type DisplayItem = {
+  item_image?: string;
   id: string;
   title: string;
   description: string;
