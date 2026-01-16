@@ -30,6 +30,8 @@ Thumbs.db
 *.py[cod]
 *$py.class
 *.so
+*.pyc
+__pycache__/
 .Python
 build/
 develop-eggs/

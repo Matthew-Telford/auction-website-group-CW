@@ -27,3 +27,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
 ]
+
+# Serve media files in development
+
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

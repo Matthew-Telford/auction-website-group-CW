@@ -163,7 +163,7 @@ INTERNAL_IPS = ["127.0.0.1"]
 
 # Media files (User uploaded content like images)
 # https://docs.djangoproject.com/en/stable/topics/files/
-MEDIA_URL = "media/"
+MEDIA_URL = "/media/"
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 
 # CORS settings for frontend development

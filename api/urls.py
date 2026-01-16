@@ -14,6 +14,7 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 from django.http import HttpResponse
@@ -27,6 +28,7 @@ from .views import (
     upload_profile_picture,
     delete_profile_picture,
     get_paginated_items,
+    get_item_by_id,
     create_item,
     update_item,
     delete_item,
@@ -52,6 +54,7 @@ urlpatterns = [
     path('profile/picture/delete/', delete_profile_picture, name='delete_profile_picture'),
     path('items/', get_paginated_items, name='get_items'),
     path('items/create/', create_item, name='create_item'),
+    path('items/<int:item_id>/', get_item_by_id, name='get_item_by_id'),
     path('items/<int:item_id>/update/', update_item, name='update_item'),
     path('items/<int:item_id>/delete/', delete_item, name='delete_item'),
     path('users/<int:user_id>/items/', get_user_items, name='get_user_items'),
