@@ -78,7 +78,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="min-w-svw min-h-svh w-full h-full bg-slate-200">
+  <div class="min-w-svw min-h-svh w-full h-full">
     <div class="pb-6 shadow-sm">
       <div class="fixed top-6 right-5 z-50 flex gap-3">
         <template v-if="!isLoggedIn">
