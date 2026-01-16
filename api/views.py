@@ -148,47 +148,45 @@ def upload_profile_picture(request):
     try:
         # Open and verify the image using Pillow
         image = Image.open(profile_picture)
-        
+
         # Verify it's actually an image (this will raise an exception if not)
         image.verify()
-        
+
         # Re-open the image after verify() (verify() closes the file)
         profile_picture.seek(0)
         image = Image.open(profile_picture)
-        
+
         # Convert RGBA to RGB if necessary (for JPEG compatibility)
-        if image.mode in ('RGBA', 'LA', 'P'):
-            background = Image.new('RGB', image.size, (255, 255, 255))
-            if image.mode == 'P':
-                image = image.convert('RGBA')
-            background.paste(image, mask=image.split()[-1] if image.mode == 'RGBA' else None)
+        if image.mode in ("RGBA", "LA", "P"):
+            background = Image.new("RGB", image.size, (255, 255, 255))
+            if image.mode == "P":
+                image = image.convert("RGBA")
+            background.paste(
+                image, mask=image.split()[-1] if image.mode == "RGBA" else None
+            )
             image = background
-        
+
         # Resize if image is too large (optional but recommended)
         max_dimension = 1024  # Max width or height
         if image.width > max_dimension or image.height > max_dimension:
             image.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
-        
+
         # Save the processed image to a BytesIO buffer
         output = io.BytesIO()
-        image_format = 'JPEG'  # Standardize to JPEG
+        image_format = "JPEG"  # Standardize to JPEG
         image.save(output, format=image_format, quality=85, optimize=True)
         
         # IMPORTANT: Seek to the beginning of the buffer before reading
         output.seek(0)
-        
+
         # Delete old profile picture if exists
         if user.profile_picture:
             user.profile_picture.delete(save=False)
         
         # Save the processed image with save=True to persist to database
         filename = f"user_{user.id}_profile.jpg"
-        user.profile_picture.save(
-            filename,
-            ContentFile(output.read()),
-            save=True
-        )
-        
+        user.profile_picture.save(filename, ContentFile(output.read()), save=True)
+
         return JsonResponse(
             {
                 "success": True,
@@ -196,16 +194,12 @@ def upload_profile_picture(request):
                 "profile_picture": request.build_absolute_uri(user.profile_picture.url),
             }
         )
-        
+
     except (IOError, OSError) as e:
         # Handle Pillow errors (invalid image, corrupt file, etc.)
-        return JsonResponse(
-            {"error": "Invalid or corrupt image file"}, status=400
-        )
+        return JsonResponse({"error": "Invalid or corrupt image file"}, status=400)
     except Exception as e:
-        return JsonResponse(
-            {"error": f"Failed to process image: {str(e)}"}, status=500
-        )
+        return JsonResponse({"error": f"Failed to process image: {str(e)}"}, status=500)
 
 
 """
@@ -239,6 +233,111 @@ def delete_profile_picture(request):
     return JsonResponse(
         {"success": True, "message": "Profile picture deleted successfully"}
     )
+
+
+"""
+Example fetch request for update user profile
+------------------------------------------------
+    await fetch("http://localhost:8000/profile/update/", {
+        method: "PUT",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrfToken,
+        },
+        credentials: "include",
+        body: JSON.stringify({
+            first_name: "Jane",
+            last_name: "Smith",
+            date_of_birth: "1995-06-15"
+        }),
+    });
+
+"""
+
+
+@login_required
+@csrf_exempt
+def update_user_profile(request):
+    """Update user's profile details (own profile or admin only)"""
+    if request.method != "PUT":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        user_id = data.get("user_id")
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"error": "Invalid JSON data"}, status=400)
+
+    # Determine which user to update
+    if user_id is not None:
+        # Trying to update a specific user
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return JsonResponse({"error": "User not found"}, status=404)
+        
+        # Check permissions - must be the user themselves or an admin
+        if user != request.user and not request.user.is_admin:
+            return JsonResponse(
+                {"error": "You don't have permission to edit this user's profile"},
+                status=403,
+            )
+    else:
+        # No user_id provided, update the current user
+        user = request.user
+
+    # Update fields if provided
+    if "first_name" in data:
+        if not data["first_name"] or not data["first_name"].strip():
+            return JsonResponse({"error": "First name cannot be empty"}, status=400)
+        user.first_name = data["first_name"].strip()
+
+    if "last_name" in data:
+        if not data["last_name"] or not data["last_name"].strip():
+            return JsonResponse({"error": "Last name cannot be empty"}, status=400)
+        user.last_name = data["last_name"].strip()
+
+    if "date_of_birth" in data:
+        try:
+            date_of_birth_obj = date.fromisoformat(data["date_of_birth"])
+            # Validate that date of birth is not in the future
+            if date_of_birth_obj > date.today():
+                return JsonResponse(
+                    {"error": "Date of birth cannot be in the future"}, status=400
+                )
+            user.date_of_birth = date_of_birth_obj
+        except (ValueError, TypeError):
+            return JsonResponse(
+                {"error": "Invalid date format. Use YYYY-MM-DD"}, status=400
+            )
+
+    try:
+        user.save()
+
+        user_data = {
+            "id": user.id,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "date_of_birth": str(user.date_of_birth),
+            "profile_picture": request.build_absolute_uri(user.profile_picture.url)
+            if user.profile_picture
+            else None,
+            "created_at": user.created_at.isoformat(),
+            "updated_at": user.updated_at.isoformat(),
+        }
+
+        return JsonResponse(
+            {
+                "success": True,
+                "message": "Profile updated successfully",
+                "user": user_data,
+            }
+        )
+    except Exception as e:
+        return JsonResponse(
+            {"error": f"Failed to update profile: {str(e)}"}, status=500
+        )
 
 
 """
@@ -399,6 +498,9 @@ def get_paginated_items(request):
         # Default ordering by creation date (newest first)
         items = items.order_by("-created_at")
 
+    # Get total count before applying pagination
+    total_count = items.count()
+
     # Apply pagination if both start and end are provided
     if start is not None and end is not None:
         try:
@@ -457,7 +559,12 @@ def get_paginated_items(request):
         items_data.append(item_data)
 
     return JsonResponse(
-        {"success": True, "items": items_data, "count": len(items_data)}
+        {
+            "success": True,
+            "items": items_data,
+            "count": len(items_data),
+            "total_count": total_count,
+        }
     )
 
 

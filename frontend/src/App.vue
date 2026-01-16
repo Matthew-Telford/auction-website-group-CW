@@ -16,7 +16,7 @@ onMounted(async () => {
 <template>
   <Toaster position="top-center" />
   <MainLogo class="fixed top-6 left-5 z-50 w-1/8" />
-  <main class="h-full w-full min-w-lvw min-h-lvh bg-zinc-700">
-    <RouterView class="bg-zinc-700 h-min-full" />
+  <main class="h-full w-full min-w-lvw min-h-lvh bg-slate-400">
+    <RouterView class="bg-zinc-100 h-min-full" />
   </main>
 </template>
