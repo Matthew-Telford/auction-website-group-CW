@@ -234,6 +234,111 @@ def delete_profile_picture(request):
 
 
 """
+Example fetch request for update user profile
+------------------------------------------------
+    await fetch("http://localhost:8000/profile/update/", {
+        method: "PUT",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrfToken,
+        },
+        credentials: "include",
+        body: JSON.stringify({
+            first_name: "Jane",
+            last_name: "Smith",
+            date_of_birth: "1995-06-15"
+        }),
+    });
+
+"""
+
+
+@login_required
+@csrf_exempt
+def update_user_profile(request):
+    """Update user's profile details (own profile or admin only)"""
+    if request.method != "PUT":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        user_id = data.get("user_id")
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"error": "Invalid JSON data"}, status=400)
+
+    # Determine which user to update
+    if user_id is not None:
+        # Trying to update a specific user
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return JsonResponse({"error": "User not found"}, status=404)
+        
+        # Check permissions - must be the user themselves or an admin
+        if user != request.user and not request.user.is_admin:
+            return JsonResponse(
+                {"error": "You don't have permission to edit this user's profile"},
+                status=403,
+            )
+    else:
+        # No user_id provided, update the current user
+        user = request.user
+
+    # Update fields if provided
+    if "first_name" in data:
+        if not data["first_name"] or not data["first_name"].strip():
+            return JsonResponse({"error": "First name cannot be empty"}, status=400)
+        user.first_name = data["first_name"].strip()
+
+    if "last_name" in data:
+        if not data["last_name"] or not data["last_name"].strip():
+            return JsonResponse({"error": "Last name cannot be empty"}, status=400)
+        user.last_name = data["last_name"].strip()
+
+    if "date_of_birth" in data:
+        try:
+            date_of_birth_obj = date.fromisoformat(data["date_of_birth"])
+            # Validate that date of birth is not in the future
+            if date_of_birth_obj > date.today():
+                return JsonResponse(
+                    {"error": "Date of birth cannot be in the future"}, status=400
+                )
+            user.date_of_birth = date_of_birth_obj
+        except (ValueError, TypeError):
+            return JsonResponse(
+                {"error": "Invalid date format. Use YYYY-MM-DD"}, status=400
+            )
+
+    try:
+        user.save()
+
+        user_data = {
+            "id": user.id,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "date_of_birth": str(user.date_of_birth),
+            "profile_picture": request.build_absolute_uri(user.profile_picture.url)
+            if user.profile_picture
+            else None,
+            "created_at": user.created_at.isoformat(),
+            "updated_at": user.updated_at.isoformat(),
+        }
+
+        return JsonResponse(
+            {
+                "success": True,
+                "message": "Profile updated successfully",
+                "user": user_data,
+            }
+        )
+    except Exception as e:
+        return JsonResponse(
+            {"error": f"Failed to update profile: {str(e)}"}, status=500
+        )
+
+
+"""
 Example fetch request for user signup
 ------------------------------------------------
     await fetch("http://localhost:8000/signup/", {
